@@ -1,0 +1,994 @@
+// ═══════════════════════════════════════════════════════════
+//  CONSELHO DE CLASSE — app.js
+//  Lê duas abas: "Notas" e "FALTAS"
+//  Cruza pelo trio ESTUDANTE + TURMA + DISCIPLINA
+//  Frequência calculada por bimestre (aulas dadas × faltas)
+//  Situação: nota >= 5 = Aprovado, < 5 = Reprovado
+//  Frequência < 75% = alerta (não reprova automaticamente)
+// ═══════════════════════════════════════════════════════════
+
+const APP = { notas: [], faltas: [], charts: {}, turmaSel: null, discSel: null };
+
+const CFG = {
+  mediaAprov: 5.0,
+  freqMin: 75,
+  escola: 'E.E. Célia Vasques',
+  etapa: 'Ensino Médio',
+};
+
+// ── Utilitários ────────────────────────────────────────────
+
+function toNum(v) {
+  if (v === null || v === undefined || v === '' || v === '-') return null;
+  if (typeof v === 'number' && isFinite(v)) return v;
+  const n = parseFloat(String(v).replace(',', '.'));
+  return isFinite(n) ? n : null;
+}
+
+function unique(arr) { return [...new Set(arr.filter(Boolean))].sort(); }
+
+function iniciais(nome) {
+  const p = nome.trim().split(/\s+/);
+  return (p[0][0] + (p[1]?.[0] || '')).toUpperCase();
+}
+
+function destroyChart(id) {
+  if (APP.charts[id]) { APP.charts[id].destroy(); delete APP.charts[id]; }
+}
+
+// Chave de cruzamento entre abas
+function chave(estudante, turma, disc) {
+  return `${estudante}|${turma}|${disc}`;
+}
+
+// ── Cálculos principais ────────────────────────────────────
+
+// Retorna objeto com b1..b4 (null se vazio)
+function notasAluno(n) {
+  return { b1: toNum(n.b1), b2: toNum(n.b2), b3: toNum(n.b3), b4: toNum(n.b4) };
+}
+
+// Média apenas dos bimestres lançados
+function calcMedia(n) {
+  const vals = [n.b1, n.b2, n.b3, n.b4].filter(v => v !== null);
+  if (!vals.length) return null;
+  return +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2);
+}
+
+// Quantos bimestres têm nota lançada
+function bimLancados(n) {
+  return [n.b1, n.b2, n.b3, n.b4].filter(v => v !== null).length;
+}
+
+// Calcula frequência a partir do registro de faltas
+// Soma apenas os bimestres com aulas informadas
+function calcFreq(f) {
+  const pares = [
+    { aulas: toNum(f.a1), faltas: toNum(f.f1) },
+    { aulas: toNum(f.a2), faltas: toNum(f.f2) },
+    { aulas: toNum(f.a3), faltas: toNum(f.f3) },
+    { aulas: toNum(f.a4), faltas: toNum(f.f4) },
+  ].filter(p => p.aulas !== null && p.aulas > 0);
+
+  if (!pares.length) return null;
+  const totalAulas  = pares.reduce((s, p) => s + p.aulas, 0);
+  const totalFaltas = pares.reduce((s, p) => s + (p.faltas || 0), 0);
+  return {
+    aulas: totalAulas,
+    faltas: totalFaltas,
+    pct: +((1 - totalFaltas / totalAulas) * 100).toFixed(1),
+  };
+}
+
+// Situação: apenas pela nota. Frequência é alerta separado.
+function situacao(media) {
+  if (media === null) return '—';
+  return media >= CFG.mediaAprov ? 'Aprovado' : 'Reprovado';
+}
+
+// Alerta de frequência (<75%)
+function alertaFreq(freq) {
+  if (!freq) return false;
+  return freq.pct < CFG.freqMin;
+}
+
+// É parcial (não tem B4)?
+function isParcial(n) {
+  return toNum(n.b4) === null;
+}
+
+// Evolução: diferença entre último e primeiro bimestre lançados
+function evolucao(n) {
+  const vals = [n.b1, n.b2, n.b3, n.b4].filter(v => v !== null);
+  if (vals.length < 2) return null;
+  return +(vals[vals.length - 1] - vals[0]).toFixed(1);
+}
+
+// ── HTML helpers ───────────────────────────────────────────
+
+function fmtNota(v) {
+  if (v === null) return '<span class="nota n-ne">—</span>';
+  const cls = v >= CFG.mediaAprov ? 'n-ok' : 'n-re';
+  return `<span class="nota ${cls}">${v.toFixed(1).replace('.', ',')}</span>`;
+}
+
+function fmtMedia(media, parcial) {
+  if (media === null) return '<span class="nota n-ne">—</span>';
+  const cls = media >= CFG.mediaAprov ? 'n-ok' : 'n-re';
+  const tag = parcial ? ' <span style="font-size:10px;color:var(--cinza);">(parc.)</span>' : '';
+  return `<span class="nota ${cls}">${media.toFixed(1).replace('.', ',')}</span>${tag}`;
+}
+
+function fmtFreqCell(freq) {
+  if (!freq) return '<span class="nota n-ne">—</span>';
+  const cls = freq.pct >= 85 ? 'freq-ok' : freq.pct >= CFG.freqMin ? 'freq-al' : 'freq-ruim';
+  const alerta = freq.pct < CFG.freqMin ? '<span class="alerta-freq"><i class="bi bi-exclamation-triangle-fill"></i> &lt;75%</span>' : '';
+  return `<span class="${cls}">${freq.pct.toFixed(1)}%</span>${alerta}`;
+}
+
+function fmtSit(media, freq, parcial) {
+  const sit = situacao(media);
+  const al  = alertaFreq(freq);
+  const suf = parcial ? ' <span style="font-size:10px;">(parc.)</span>' : '';
+  if (sit === 'Aprovado') {
+    const badge = al
+      ? `<span class="badge b-al"><i class="bi bi-exclamation-triangle-fill"></i> Aprovado ⚠ freq.</span>`
+      : `<span class="badge b-ap"><i class="bi bi-check-circle-fill"></i> Aprovado</span>`;
+    return badge + suf;
+  }
+  if (sit === 'Reprovado') return `<span class="badge b-re"><i class="bi bi-x-circle-fill"></i> Reprovado</span>${suf}`;
+  return `<span class="badge b-pa">—</span>`;
+}
+
+function fmtEvol(n) {
+  const e = evolucao(n);
+  if (e === null) return '<span class="evol-neu">—</span>';
+  if (e > 0) return `<span class="evol-pos">▲ ${e.toFixed(1)}</span>`;
+  if (e < 0) return `<span class="evol-neg">▼ ${Math.abs(e).toFixed(1)}</span>`;
+  return '<span class="evol-neu">= 0</span>';
+}
+
+// ── Parser ─────────────────────────────────────────────────
+
+function colIdx(header, ...keys) {
+  return header.findIndex(h => keys.some(k => String(h).toUpperCase().includes(k.toUpperCase())));
+}
+
+function parseNotasSheet(rows) {
+  if (!rows.length) return [];
+  const h = rows[0].map(c => String(c || '').trim());
+  const iE = colIdx(h, 'ESTUDANTE', 'ALUNO', 'NOME');
+  const iT = colIdx(h, 'TURMA');
+  const iD = colIdx(h, 'DISCIPLINA');
+  const iB1 = colIdx(h, '1º BIMESTRE', '1 BIMESTRE', 'NOTA 1', 'B1', 'BIM1', '1BIM', 'NOTA1');
+  const iB2 = colIdx(h, '2º BIMESTRE', '2 BIMESTRE', 'NOTA 2', 'B2', 'BIM2', '2BIM', 'NOTA2');
+  const iB3 = colIdx(h, '3º BIMESTRE', '3 BIMESTRE', 'NOTA 3', 'B3', 'BIM3', '3BIM', 'NOTA3');
+  const iB4 = colIdx(h, '4º BIMESTRE', '4 BIMESTRE', 'NOTA 4', 'B4', 'BIM4', '4BIM', 'NOTA4');
+  if (iE < 0 || iT < 0 || iD < 0) return [];
+  return rows.slice(1).map(r => ({
+    ESTUDANTE: String(r[iE] || '').trim().toUpperCase(),
+    TURMA:     String(r[iT] || '').trim().toUpperCase(),
+    DISCIPLINA:String(r[iD] || '').trim().toUpperCase(),
+    b1: iB1 >= 0 ? toNum(r[iB1]) : null,
+    b2: iB2 >= 0 ? toNum(r[iB2]) : null,
+    b3: iB3 >= 0 ? toNum(r[iB3]) : null,
+    b4: iB4 >= 0 ? toNum(r[iB4]) : null,
+  })).filter(r => r.ESTUDANTE);
+}
+
+function parseFaltasSheet(rows) {
+  if (!rows.length) return [];
+  const h = rows[0].map(c => String(c || '').trim());
+  const iE = colIdx(h, 'ESTUDANTE', 'ALUNO', 'NOME');
+  const iT = colIdx(h, 'TURMA');
+  const iD = colIdx(h, 'DISCIPLINA');
+  // Aulas por bimestre — novo formato
+  const iA1 = colIdx(h, 'AULAS 1', 'A1', 'AULAS1');
+  const iA2 = colIdx(h, 'AULAS 2', 'A2', 'AULAS2');
+  const iA3 = colIdx(h, 'AULAS 3', 'A3', 'AULAS3');
+  const iA4 = colIdx(h, 'AULAS 4', 'A4', 'AULAS4');
+  // Faltas por bimestre — formato existente na planilha
+  const iF1 = colIdx(h, 'FALTAS 1', 'F1', 'FALTAS1');
+  const iF2 = colIdx(h, 'FALTAS 2', 'F2', 'FALTAS2');
+  const iF3 = colIdx(h, 'FALTAS 3', 'F3', 'FALTAS3');
+  const iF4 = colIdx(h, 'FALTAS 4', 'F4', 'FALTAS4');
+  // Total de aulas (formato antigo — fallback)
+  const iTotalAulas = colIdx(h, 'TOTAL DE AULAS', 'TOTAL AULAS');
+
+  if (iE < 0 || iT < 0 || iD < 0) return [];
+
+  const parsed = rows.slice(1).map(r => ({
+    ESTUDANTE: String(r[iE] || '').trim().toUpperCase(),
+    TURMA:     String(r[iT] || '').trim().toUpperCase(),
+    DISCIPLINA:String(r[iD] || '').trim().toUpperCase(),
+    a1: iA1 >= 0 ? toNum(r[iA1]) : null,
+    a2: iA2 >= 0 ? toNum(r[iA2]) : null,
+    a3: iA3 >= 0 ? toNum(r[iA3]) : null,
+    a4: iA4 >= 0 ? toNum(r[iA4]) : null,
+    f1: iF1 >= 0 ? toNum(r[iF1]) : null,
+    f2: iF2 >= 0 ? toNum(r[iF2]) : null,
+    f3: iF3 >= 0 ? toNum(r[iF3]) : null,
+    f4: iF4 >= 0 ? toNum(r[iF4]) : null,
+    totalAulas: iTotalAulas >= 0 ? toNum(r[iTotalAulas]) : null,
+  })).filter(r => r.ESTUDANTE);
+
+  // Fallback: se não tem colunas AULAS por bimestre mas tem TOTAL DE AULAS,
+  // distribui proporcionalmente pelas faltas que existem
+  parsed.forEach(r => {
+    if (!r.a1 && !r.a2 && !r.a3 && !r.a4 && r.totalAulas) {
+      const bimComFalta = [r.f1, r.f2, r.f3, r.f4].filter(v => v !== null).length || 4;
+      const aulasP = +(r.totalAulas / 4).toFixed(0);
+      if (r.f1 !== null) r.a1 = aulasP;
+      if (r.f2 !== null) r.a2 = aulasP;
+      if (r.f3 !== null) r.a3 = aulasP;
+      if (r.f4 !== null) r.a4 = aulasP;
+    }
+  });
+
+  return parsed;
+}
+
+function lerArquivo(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'binary', raw: false });
+        let notas = [], faltas = [];
+        wb.SheetNames.forEach(name => {
+          const ws   = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '' });
+          const nUp  = name.trim().toUpperCase();
+          if (nUp.includes('NOTA') || nUp === 'NOTAS') {
+            notas = parseNotasSheet(ws);
+          } else if (nUp.includes('FALT')) {
+            faltas = parseFaltasSheet(ws);
+          } else {
+            // Aba desconhecida: tenta como notas se tiver colunas certas
+            const tentativa = parseNotasSheet(ws);
+            if (tentativa.length) notas.push(...tentativa);
+          }
+        });
+        resolve({ notas, faltas });
+      } catch(err) { reject(err); }
+    };
+    reader.onerror = reject;
+    reader.readAsBinaryString(file);
+  });
+}
+
+// ── Drag & Drop ────────────────────────────────────────────
+function dragOver(e, id) { e.preventDefault(); document.getElementById(id).classList.add('over'); }
+function dragLeave(id)   { document.getElementById(id).classList.remove('over'); }
+function drop(e, id) {
+  e.preventDefault(); dragLeave(id);
+  processarArquivos(e.dataTransfer.files);
+}
+
+async function handleUpload(input) {
+  if (!input.files.length) return;
+  await processarArquivos(input.files);
+}
+
+async function processarArquivos(files) {
+  loader(true, 'Lendo planilha...');
+  const statusEl = document.getElementById('status-up');
+  try {
+    for (const f of files) {
+      const { notas, faltas } = await lerArquivo(f);
+      // Mescla sem duplicar
+      const chN = new Set(APP.notas.map(r => chave(r.ESTUDANTE, r.TURMA, r.DISCIPLINA) + r.b1 + r.b2 + r.b3 + r.b4));
+      notas.forEach(r => { if (!chN.has(chave(r.ESTUDANTE, r.TURMA, r.DISCIPLINA) + r.b1 + r.b2 + r.b3 + r.b4)) APP.notas.push(r); });
+      const chF = new Set(APP.faltas.map(r => chave(r.ESTUDANTE, r.TURMA, r.DISCIPLINA)));
+      faltas.forEach(r => { if (!chF.has(chave(r.ESTUDANTE, r.TURMA, r.DISCIPLINA))) APP.faltas.push(r); });
+    }
+    if (!APP.notas.length) throw new Error('Nenhuma nota encontrada. Verifique se a aba se chama "Notas".');
+    const turmas = unique(APP.notas.map(r => r.TURMA));
+    const discs  = unique(APP.notas.map(r => r.DISCIPLINA));
+    statusEl.innerHTML = `<span style="color:var(--verde);">✓ ${APP.notas.length} registros de notas · ${APP.faltas.length} de frequência · ${turmas.length} turma(s) · ${discs.length} disciplina(s)</span>`;
+    buildNav();
+    showSection('geral');
+  } catch(err) {
+    statusEl.innerHTML = `<span style="color:var(--verm);">Erro: ${err.message}</span>`;
+  }
+  loader(false);
+}
+
+// ── Loader ─────────────────────────────────────────────────
+function loader(sim, msg) {
+  const el = document.getElementById('loader');
+  el.style.display = sim ? 'flex' : 'none';
+  if (msg) document.getElementById('loader-msg').textContent = msg;
+}
+
+// ── Navegação ──────────────────────────────────────────────
+function buildNav() {
+  const turmas = unique(APP.notas.map(r => r.TURMA));
+  const discs  = unique(APP.notas.map(r => r.DISCIPLINA));
+  document.getElementById('nav-turmas').innerHTML = turmas.map(t =>
+    `<a class="nav-link" data-t="${t}" onclick="selTurma('${t}')"><i class="bi bi-people"></i> ${t}</a>`).join('');
+  document.getElementById('nav-discs').innerHTML = discs.map(d =>
+    `<a class="nav-link" data-d="${encodeURIComponent(d)}" onclick="selDisc('${encodeURIComponent(d)}')"><i class="bi bi-journal-bookmark"></i> ${d}</a>`).join('');
+}
+
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('#sidebar .nav-link').forEach(l => l.classList.remove('active'));
+  document.getElementById('section-' + id)?.classList.add('active');
+  document.querySelectorAll(`[data-s="${id}"]`).forEach(l => l.classList.add('active'));
+  const titles = {
+    upload:    ['Importar dados', 'Selecione os arquivos para começar'],
+    geral:     ['Painel geral', 'Visão consolidada'],
+    turma:     ['Turma ' + (APP.turmaSel || ''), ''],
+    disc:      [APP.discSel || '', 'Análise e intervenções pedagógicas'],
+    relatorios:['Relatórios PDF', 'Gere relatórios para impressão'],
+  };
+  const [t, s] = titles[id] || ['', ''];
+  document.getElementById('tb-title').textContent = t;
+  document.getElementById('tb-sub').textContent = s;
+  if (id === 'geral') renderGeral();
+  if (id === 'turma') renderTurma();
+  if (id === 'disc')  renderDisc();
+  if (id === 'relatorios') popSelects();
+}
+
+function selTurma(t) {
+  APP.turmaSel = t;
+  document.querySelectorAll('[data-t]').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll(`[data-t="${t}"]`).forEach(el => el.classList.add('active'));
+  showSection('turma');
+}
+function selDisc(d) {
+  APP.discSel = decodeURIComponent(d);
+  document.querySelectorAll('[data-d]').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll(`[data-d="${d}"]`).forEach(el => el.classList.add('active'));
+  showSection('disc');
+}
+
+// ── Cruzamento notas + faltas ──────────────────────────────
+function getFaltas(estudante, turma, disc) {
+  return APP.faltas.find(f =>
+    f.ESTUDANTE === estudante && f.TURMA === turma && f.DISCIPLINA === disc
+  ) || null;
+}
+
+// Dados completos de um registro de nota
+function dadosReg(n) {
+  const f    = getFaltas(n.ESTUDANTE, n.TURMA, n.DISCIPLINA);
+  const media = calcMedia(n);
+  const freq  = f ? calcFreq(f) : null;
+  const sit   = situacao(media);
+  const alFreq = alertaFreq(freq);
+  const parc  = isParcial(n);
+  return { n, f, media, freq, sit, alFreq, parc };
+}
+
+// ── PAINEL GERAL ───────────────────────────────────────────
+function renderGeral() {
+  if (!APP.notas.length) return;
+  const turmas = unique(APP.notas.map(r => r.TURMA));
+  const discs  = unique(APP.notas.map(r => r.DISCIPLINA));
+  const alunos = unique(APP.notas.map(r => r.ESTUDANTE));
+
+  // Situação por aluno (pior disciplina)
+  let aprov = 0, reprov = 0, alFreqs = 0;
+  alunos.forEach(a => {
+    const regs = APP.notas.filter(r => r.ESTUDANTE === a);
+    const sits = regs.map(r => dadosReg(r));
+    if (sits.some(d => d.sit === 'Reprovado')) reprov++;
+    else aprov++;
+    if (sits.some(d => d.alFreq)) alFreqs++;
+  });
+
+  const medias = APP.notas.map(r => calcMedia(r)).filter(m => m !== null);
+  const mg = medias.length ? +(medias.reduce((a,b)=>a+b,0)/medias.length).toFixed(1) : 0;
+
+  document.getElementById('mg-geral').innerHTML = `
+    <div class="mc bl"><div class="ml">Total de alunos</div><div class="mv c-bl">${alunos.length}</div><div class="ms">${turmas.length} turmas · ${discs.length} disciplinas</div></div>
+    <div class="mc gr"><div class="ml">Aprovados</div><div class="mv c-gr">${aprov}</div><div class="ms">${Math.round(aprov/alunos.length*100)}% do total</div></div>
+    <div class="mc vm"><div class="ml">Reprovados</div><div class="mv c-vm">${reprov}</div><div class="ms">${Math.round(reprov/alunos.length*100)}% do total</div></div>
+    <div class="mc am"><div class="ml">Alerta de frequência</div><div class="mv c-am">${alFreqs}</div><div class="ms">freq. &lt; 75%</div></div>
+    <div class="mc rx"><div class="ml">Média geral</div><div class="mv c-rx">${mg.toFixed(1)}</div></div>`;
+
+  destroyChart('ch-sit-turmas');
+  const apT=[], rpT=[];
+  turmas.forEach(t => {
+    const al = unique(APP.notas.filter(r=>r.TURMA===t).map(r=>r.ESTUDANTE));
+    let ap=0,rp=0;
+    al.forEach(a => {
+      const regs = APP.notas.filter(r=>r.ESTUDANTE===a&&r.TURMA===t);
+      if(regs.some(r=>dadosReg(r).sit==='Reprovado')) rp++; else ap++;
+    });
+    apT.push(ap); rpT.push(rp);
+  });
+  APP.charts['ch-sit-turmas'] = new Chart(document.getElementById('ch-sit-turmas'),{
+    type:'bar', data:{labels:turmas,datasets:[
+      {label:'Aprovado',data:apT,backgroundColor:'#057a55'},
+      {label:'Reprovado',data:rpT,backgroundColor:'#c81e1e'},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{font:{size:12},boxWidth:12}}},scales:{x:{stacked:true},y:{stacked:true,ticks:{stepSize:1}}}}
+  });
+
+  destroyChart('ch-media-disc');
+  const mD = discs.map(d=>{const ms=APP.notas.filter(r=>r.DISCIPLINA===d).map(r=>calcMedia(r)).filter(m=>m!==null);return ms.length?+(ms.reduce((a,b)=>a+b,0)/ms.length).toFixed(2):0;});
+  APP.charts['ch-media-disc'] = new Chart(document.getElementById('ch-media-disc'),{
+    type:'bar', data:{labels:discs,datasets:[{label:'Média',data:mD,backgroundColor:mD.map(m=>m>=CFG.mediaAprov?'#057a55':'#c81e1e')}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{min:0,max:10}}}
+  });
+
+  document.getElementById('tb-resumo').innerHTML = turmas.map(t => {
+    const al = unique(APP.notas.filter(r=>r.TURMA===t).map(r=>r.ESTUDANTE));
+    let ap=0,rp=0,alF=0;
+    al.forEach(a=>{
+      const regs=APP.notas.filter(r=>r.ESTUDANTE===a&&r.TURMA===t);
+      const ds=regs.map(r=>dadosReg(r));
+      if(ds.some(d=>d.sit==='Reprovado')) rp++; else ap++;
+      if(ds.some(d=>d.alFreq)) alF++;
+    });
+    const ms=APP.notas.filter(r=>r.TURMA===t).map(r=>calcMedia(r)).filter(m=>m!==null);
+    const mg2=ms.length?+(ms.reduce((a,b)=>a+b,0)/ms.length).toFixed(1):0;
+    return `<tr class="click" onclick="selTurma('${t}')">
+      <td><strong>${t}</strong></td><td>${al.length}</td>
+      <td><span class="badge b-ap">${ap}</span></td>
+      <td><span class="badge b-re">${rp}</span></td>
+      <td>${alF>0?`<span class="badge b-al">${alF}</span>`:'<span style="color:var(--cinza)">—</span>'}</td>
+      <td class="nota ${mg2>=CFG.mediaAprov?'n-ok':'n-re'}">${mg2.toFixed(1).replace('.',',')}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── VISÃO TURMA ────────────────────────────────────────────
+function renderTurma() {
+  const t = APP.turmaSel;
+  const regs = APP.notas.filter(r => r.TURMA === t);
+  if (!regs.length) return;
+  const discs  = unique(regs.map(r=>r.DISCIPLINA));
+  const alunos = unique(regs.map(r=>r.ESTUDANTE));
+  document.getElementById('titulo-alunos').textContent = `Alunos — Turma ${t}`;
+  document.getElementById('tb-title').textContent = `Turma ${t}`;
+
+  let ap=0,rp=0,alF=0;
+  alunos.forEach(a=>{
+    const ds=regs.filter(r=>r.ESTUDANTE===a).map(r=>dadosReg(r));
+    if(ds.some(d=>d.sit==='Reprovado')) rp++; else ap++;
+    if(ds.some(d=>d.alFreq)) alF++;
+  });
+  const ms=regs.map(r=>calcMedia(r)).filter(m=>m!==null);
+  const mg=ms.length?+(ms.reduce((a,b)=>a+b,0)/ms.length).toFixed(1):0;
+
+  document.getElementById('mg-turma').innerHTML=`
+    <div class="mc bl"><div class="ml">Alunos</div><div class="mv c-bl">${alunos.length}</div><div class="ms">${discs.length} disciplinas</div></div>
+    <div class="mc gr"><div class="ml">Aprovados</div><div class="mv c-gr">${ap}</div><div class="ms">${Math.round(ap/alunos.length*100)}%</div></div>
+    <div class="mc vm"><div class="ml">Reprovados</div><div class="mv c-vm">${rp}</div><div class="ms">${Math.round(rp/alunos.length*100)}%</div></div>
+    <div class="mc am"><div class="ml">Alerta freq.</div><div class="mv c-am">${alF}</div></div>
+    <div class="mc rx"><div class="ml">Média geral</div><div class="mv c-rx">${mg.toFixed(1).replace('.',',')}</div></div>`;
+
+  destroyChart('ch-turma-disc');
+  const mD=discs.map(d=>{const ms2=regs.filter(r=>r.DISCIPLINA===d).map(r=>calcMedia(r)).filter(m=>m!==null);return ms2.length?+(ms2.reduce((a,b)=>a+b,0)/ms2.length).toFixed(2):0;});
+  APP.charts['ch-turma-disc']=new Chart(document.getElementById('ch-turma-disc'),{
+    type:'bar',data:{labels:discs,datasets:[{label:'Média',data:mD,backgroundColor:mD.map(m=>m>=CFG.mediaAprov?'#057a55':'#c81e1e')}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{min:0,max:10}}}
+  });
+  destroyChart('ch-turma-sit');
+  const total = ap + rp || 1;
+  const pctLabel = {
+    id: 'pctLabel',
+    afterDraw(chart) {
+      const ctx2 = chart.ctx;
+      chart.data.datasets.forEach((ds, di) => {
+        const meta = chart.getDatasetMeta(di);
+        meta.data.forEach((arc, i) => {
+          const val = ds.data[i];
+          if (!val) return;
+          const pct = Math.round(val / total * 100);
+          if (pct < 5) return;
+          const mid = arc.startAngle + (arc.endAngle - arc.startAngle) / 2;
+          const r = (arc.innerRadius + arc.outerRadius) / 2;
+          const x = arc.x + r * Math.cos(mid);
+          const y = arc.y + r * Math.sin(mid);
+          ctx2.save();
+          ctx2.fillStyle = '#fff';
+          ctx2.font = 'bold 13px sans-serif';
+          ctx2.textAlign = 'center';
+          ctx2.textBaseline = 'middle';
+          ctx2.fillText(pct + '%', x, y);
+          ctx2.restore();
+        });
+      });
+    }
+  };
+  APP.charts['ch-turma-sit'] = new Chart(document.getElementById('ch-turma-sit'), {
+    type: 'doughnut',
+    plugins: [pctLabel],
+    data: { labels: ['Aprovado', 'Reprovado'], datasets: [{ data: [ap, rp], backgroundColor: ['#057a55', '#c81e1e'], borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '52%',
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { size: 12 }, boxWidth: 12 } },
+        tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw} (${Math.round(ctx.raw / total * 100)}%)` } }
+      }
+    }
+  });
+  renderAlunos();
+}
+
+function renderAlunos() {
+  const t   = APP.turmaSel;
+  const sit = document.getElementById('filtro-sit').value;
+  const bsc = document.getElementById('busca').value.toLowerCase();
+  const regs = APP.notas.filter(r => r.TURMA === t && (!bsc || r.ESTUDANTE.toLowerCase().includes(bsc)));
+  const linhas = [];
+  regs.forEach(r => {
+    const d = dadosReg(r);
+    if (sit === 'Aprovado' && d.sit !== 'Aprovado') return;
+    if (sit === 'Reprovado' && d.sit !== 'Reprovado') return;
+    if (sit === 'Alerta freq.' && !d.alFreq) return;
+    linhas.push(`<tr class="click" onclick="abrirModal('${r.ESTUDANTE.replace(/'/g,"\\'")}','${t}')">
+      <td style="font-size:12px;"><strong>${r.ESTUDANTE}</strong></td>
+      <td style="font-size:12px;color:var(--cinza);">${r.DISCIPLINA}</td>
+      <td>${fmtNota(r.b1)}</td><td>${fmtNota(r.b2)}</td><td>${fmtNota(r.b3)}</td><td>${fmtNota(r.b4)}</td>
+      <td>${fmtEvol(r)}</td>
+      <td>${fmtMedia(d.media, d.parc)}</td>
+      <td>${fmtFreqCell(d.freq)}</td>
+      <td>${fmtSit(d.media, d.freq, d.parc)}</td>
+    </tr>`);
+  });
+  document.getElementById('tb-alunos').innerHTML = linhas.join('') ||
+    '<tr><td colspan="10" style="text-align:center;color:var(--cinza);padding:20px;">Nenhum registro</td></tr>';
+}
+
+// ── VISÃO DISCIPLINA ───────────────────────────────────────
+function renderDisc() {
+  const disc = APP.discSel;
+  const regs = APP.notas.filter(r => r.DISCIPLINA === disc);
+  if (!regs.length) return;
+  const turmas = unique(regs.map(r=>r.TURMA));
+  document.getElementById('titulo-disc').textContent = disc;
+  document.getElementById('tb-title').textContent = disc;
+
+  let ap=0,rp=0,alF=0;
+  const ms=[];
+  regs.forEach(r=>{
+    const d=dadosReg(r);
+    if(d.media!==null) ms.push(d.media);
+    if(d.sit==='Reprovado') rp++; else if(d.sit==='Aprovado') ap++;
+    if(d.alFreq) alF++;
+  });
+  const mg=ms.length?+(ms.reduce((a,b)=>a+b,0)/ms.length).toFixed(1):0;
+
+  document.getElementById('mg-disc').innerHTML=`
+    <div class="mc bl"><div class="ml">Registros</div><div class="mv c-bl">${regs.length}</div><div class="ms">${turmas.length} turma(s)</div></div>
+    <div class="mc gr"><div class="ml">Aprovados</div><div class="mv c-gr">${ap}</div></div>
+    <div class="mc vm"><div class="ml">Reprovados</div><div class="mv c-vm">${rp}</div></div>
+    <div class="mc am"><div class="ml">Alerta freq.</div><div class="mv c-am">${alF}</div></div>
+    <div class="mc rx"><div class="ml">Média geral</div><div class="mv c-rx">${mg.toFixed(1).replace('.',',')}</div></div>`;
+
+  destroyChart('ch-disc-evol');
+  const cores=['#1a56db','#057a55','#b45309','#c81e1e','#6c2bd9'];
+  APP.charts['ch-disc-evol']=new Chart(document.getElementById('ch-disc-evol'),{
+    type:'line',
+    data:{labels:['1º Bim','2º Bim','3º Bim','4º Bim'],
+      datasets:turmas.map((t,i)=>{
+        const tr=regs.filter(r=>r.TURMA===t);
+        return{label:t,borderColor:cores[i%cores.length],backgroundColor:'transparent',pointBackgroundColor:cores[i%cores.length],tension:.3,spanGaps:true,
+          data:['b1','b2','b3','b4'].map(b=>{const vs=tr.map(r=>r[b]).filter(v=>v!==null);return vs.length?+(vs.reduce((a,c)=>a+c,0)/vs.length).toFixed(2):null;})};
+      })
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{font:{size:12},boxWidth:12}}},scales:{y:{min:0,max:10}}}
+  });
+
+  destroyChart('ch-disc-dist');
+  const faixas=['0–2','2–4','4–5','5–7','7–10'];
+  const cnt=[0,0,0,0,0];
+  ms.forEach(m=>{if(m<2)cnt[0]++;else if(m<4)cnt[1]++;else if(m<5)cnt[2]++;else if(m<7)cnt[3]++;else cnt[4]++;});
+  APP.charts['ch-disc-dist']=new Chart(document.getElementById('ch-disc-dist'),{
+    type:'bar',data:{labels:faixas,datasets:[{label:'Alunos',data:cnt,backgroundColor:['#c81e1e','#c81e1e','#b45309','#057a55','#057a55']}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{stepSize:1}}}}
+  });
+
+  renderIntervencoes(regs);
+  const sel=document.getElementById('filtro-turma-disc');
+  sel.innerHTML='<option value="">Todas as turmas</option>'+turmas.map(t=>`<option value="${t}">${t}</option>`).join('');
+  renderListaDisc();
+}
+
+function renderIntervencoes(regs) {
+  const criticos  = regs.filter(r=>{const d=dadosReg(r);return d.media!==null&&d.media<3;});
+  const reprovN   = regs.filter(r=>{const d=dadosReg(r);return d.media!==null&&d.media>=3&&d.media<CFG.mediaAprov;});
+  const alertFreq = regs.filter(r=>dadosReg(r).alFreq);
+
+  let html='';
+  if(criticos.length){
+    html+=`<div class="iv iv-crit"><i class="bi bi-exclamation-octagon-fill" style="font-size:20px;color:var(--verm);margin-top:2px;flex-shrink:0;"></i>
+    <div><div class="iv-title" style="color:var(--verm-esc);">Desempenho crítico — ${criticos.length} aluno(s)</div>
+    <div class="iv-desc">${criticos.map(r=>`<strong>${r.ESTUDANTE}</strong> (${r.TURMA}) — média ${(calcMedia(r)||0).toFixed(1).replace('.',',')}`).join('<br>')}</div>
+    <div class="iv-desc" style="margin-top:5px;">→ Encaminhar para reforço intensivo. Verificar possibilidade de trabalho de compensação de nota e contato com família.</div></div></div>`;
+  }
+  if(reprovN.length){
+    html+=`<div class="iv iv-alert"><i class="bi bi-exclamation-triangle-fill" style="font-size:20px;color:var(--amber);margin-top:2px;flex-shrink:0;"></i>
+    <div><div class="iv-title" style="color:var(--amber-esc);">Abaixo da média — ${reprovN.length} aluno(s)</div>
+    <div class="iv-desc">${reprovN.map(r=>`<strong>${r.ESTUDANTE}</strong> (${r.TURMA}) — média ${(calcMedia(r)||0).toFixed(1).replace('.',',')}`).join('<br>')}</div>
+    <div class="iv-desc" style="margin-top:5px;">→ Solicitar trabalho de compensação de nota. Acompanhamento mais próximo e reforço antes do próximo bimestre.</div></div></div>`;
+  }
+  if(alertFreq.length){
+    html+=`<div class="iv iv-freq"><i class="bi bi-calendar-x-fill" style="font-size:20px;color:#f97316;margin-top:2px;flex-shrink:0;"></i>
+    <div><div class="iv-title" style="color:#7c2d12;">Frequência abaixo de 75% — ${alertFreq.length} aluno(s)</div>
+    <div class="iv-desc">${alertFreq.map(r=>{const freq=calcFreq(getFaltas(r.ESTUDANTE,r.TURMA,r.DISCIPLINA));return`<strong>${r.ESTUDANTE}</strong> (${r.TURMA}) — ${freq?freq.pct.toFixed(1)+'%':'-'} de presença`;}).join('<br>')}</div>
+    <div class="iv-desc" style="margin-top:5px;">→ Comunicar família. Verificar motivo das faltas e possibilidade de trabalho de compensação de frequência.</div></div></div>`;
+  }
+  if(!html) html=`<div class="iv iv-ok"><i class="bi bi-check-circle-fill" style="font-size:20px;color:var(--verde);flex-shrink:0;"></i><div><div class="iv-title" style="color:var(--verde-esc);">Sem alertas críticos nesta disciplina</div><div class="iv-desc">Todos os alunos com média ≥ 5,0 e sem alerta de frequência.</div></div></div>`;
+  document.getElementById('div-iv').innerHTML=html;
+}
+
+function onFiltroTurmaDisc() {
+  const ft = document.getElementById('filtro-turma-disc').value;
+  const label = document.getElementById('iv-turma-label');
+  if (label) label.textContent = ft ? `— ${ft}` : '';
+  const disc = APP.discSel;
+  const regs = APP.notas.filter(r => r.DISCIPLINA === disc && (!ft || r.TURMA === ft));
+  renderIntervencoes(regs);
+  renderListaDisc();
+}
+
+function renderListaDisc() {
+  const disc=APP.discSel;
+  const ft=document.getElementById('filtro-turma-disc').value;
+  const regs=APP.notas.filter(r=>r.DISCIPLINA===disc&&(!ft||r.TURMA===ft));
+  document.getElementById('tb-disc').innerHTML=regs.map(r=>{
+    const d=dadosReg(r);
+    const alerta=d.media!==null&&d.media<3?`<span class="badge b-re">Crítico</span>`:
+                 d.media!==null&&d.media<CFG.mediaAprov?`<span class="badge b-al">Comp. nota</span>`:
+                 d.alFreq?`<span class="badge b-al">Comp. freq.</span>`:
+                 `<span style="color:var(--cinza);font-size:11px;">—</span>`;
+    return`<tr class="click" onclick="abrirModal('${r.ESTUDANTE.replace(/'/g,"\\'")}','${r.TURMA}')">
+      <td style="font-size:12px;"><strong>${r.ESTUDANTE}</strong></td>
+      <td><span class="badge b-info">${r.TURMA}</span></td>
+      <td>${fmtNota(r.b1)}</td><td>${fmtNota(r.b2)}</td><td>${fmtNota(r.b3)}</td><td>${fmtNota(r.b4)}</td>
+      <td>${fmtMedia(d.media,d.parc)}</td>
+      <td>${fmtFreqCell(d.freq)}</td>
+      <td>${fmtSit(d.media,d.freq,d.parc)}</td>
+      <td>${alerta}</td>
+    </tr>`;
+  }).join('')||'<tr><td colspan="10" style="text-align:center;color:var(--cinza);padding:20px;">Nenhum registro</td></tr>';
+}
+
+// ── MODAL ALUNO ────────────────────────────────────────────
+function abrirModal(nome, turma) {
+  const regs=APP.notas.filter(r=>r.ESTUDANTE===nome&&r.TURMA===turma);
+  if(!regs.length) return;
+  document.getElementById('m-av').textContent=iniciais(nome);
+  document.getElementById('m-nome').textContent=`${nome} — ${turma}`;
+
+  const todos=regs.map(r=>dadosReg(r));
+  const temReprov=todos.some(d=>d.sit==='Reprovado');
+  const temAlFreq=todos.some(d=>d.alFreq);
+  const sitEl=document.getElementById('m-sit');
+  sitEl.className='badge '+(temReprov?'b-re':temAlFreq?'b-al':'b-ap');
+  sitEl.textContent=temReprov?'Reprovado em disciplina(s)':temAlFreq?'Aprovado ⚠ freq.':'Aprovado';
+
+  const cores=['#1a56db','#057a55','#b45309','#c81e1e','#6c2bd9','#0e9f6e'];
+
+  let tabela=`<table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead><tr style="background:#f9fafb;">
+      <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #e5e7eb;font-size:11px;">Disciplina</th>
+      <th style="padding:8px 10px;text-align:center;border-bottom:1px solid #e5e7eb;font-size:11px;">B1</th>
+      <th style="padding:8px 10px;text-align:center;border-bottom:1px solid #e5e7eb;font-size:11px;">B2</th>
+      <th style="padding:8px 10px;text-align:center;border-bottom:1px solid #e5e7eb;font-size:11px;">B3</th>
+      <th style="padding:8px 10px;text-align:center;border-bottom:1px solid #e5e7eb;font-size:11px;">B4</th>
+      <th style="padding:8px 10px;text-align:center;border-bottom:1px solid #e5e7eb;font-size:11px;">Média</th>
+      <th style="padding:8px 10px;text-align:center;border-bottom:1px solid #e5e7eb;font-size:11px;">Frequência</th>
+      <th style="padding:8px 10px;text-align:center;border-bottom:1px solid #e5e7eb;font-size:11px;">Situação</th>
+    </tr></thead><tbody>`;
+  regs.forEach(r=>{
+    const d=dadosReg(r);
+    tabela+=`<tr>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-weight:600;">${r.DISCIPLINA}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;text-align:center;">${fmtNota(r.b1)}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;text-align:center;">${fmtNota(r.b2)}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;text-align:center;">${fmtNota(r.b3)}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;text-align:center;">${fmtNota(r.b4)}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;text-align:center;">${fmtMedia(d.media,d.parc)}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;text-align:center;">${fmtFreqCell(d.freq)}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;text-align:center;">${fmtSit(d.media,d.freq,d.parc)}</td>
+    </tr>`;
+  });
+  tabela+=`</tbody></table>`;
+
+  const nomeEsc=nome.replace(/'/g,"\\'");
+  document.getElementById('m-body').innerHTML=
+    `<p style="font-size:12px;font-weight:600;color:var(--cinza-esc);margin-bottom:8px;">Evolução bimestral por disciplina</p>`+
+    `<div style="position:relative;height:210px;margin-bottom:18px;"><canvas id="ch-modal-evol"></canvas></div>`+
+    `<p style="font-size:12px;font-weight:600;color:var(--cinza-esc);margin:0 0 8px;">Notas e frequência</p>`+
+    tabela+
+    `<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-success btn-sm" onclick="pdfAlunoNome('${nomeEsc}','${turma}')"><i class="bi bi-file-earmark-person"></i> Gerar boletim PDF</button>
+    </div>`;
+
+  document.getElementById('modal-aluno').classList.add('open');
+
+  // Gráfico de linhas após DOM estar pronto
+  setTimeout(()=>{
+    const ctx=document.getElementById('ch-modal-evol');
+    if(!ctx) return;
+    if(APP.charts['ch-modal-evol']){APP.charts['ch-modal-evol'].destroy();delete APP.charts['ch-modal-evol'];}
+    APP.charts['ch-modal-evol']=new Chart(ctx,{
+      type:'line',
+      data:{
+        labels:['1º Bim','2º Bim','3º Bim','4º Bim'],
+        datasets:regs.map((r,i)=>({
+          label:r.DISCIPLINA,
+          borderColor:cores[i%cores.length],
+          backgroundColor:'transparent',
+          pointBackgroundColor:cores[i%cores.length],
+          pointRadius:5,
+          pointHoverRadius:7,
+          tension:0.3,
+          spanGaps:true,
+          data:[r.b1,r.b2,r.b3,r.b4],
+        }))
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{
+          legend:{position:'top',labels:{font:{size:11},boxWidth:10,padding:12}},
+          tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.raw!==null?Number(c.raw).toFixed(1).replace('.',','):'—'}`}},
+        },
+        scales:{
+          y:{min:0,max:10,ticks:{stepSize:1},grid:{color:'rgba(0,0,0,.05)'},
+            afterDraw(chart){
+              const ctx2=chart.ctx,yScale=chart.scales.y,xScale=chart.scales.x;
+              const y5=yScale.getPixelForValue(5);
+              ctx2.save();ctx2.beginPath();
+              ctx2.setLineDash([5,4]);ctx2.strokeStyle='rgba(220,38,38,0.35)';ctx2.lineWidth=1;
+              ctx2.moveTo(xScale.left,y5);ctx2.lineTo(xScale.right,y5);
+              ctx2.stroke();ctx2.restore();
+            }
+          },
+          x:{grid:{color:'rgba(0,0,0,.04)'}}
+        }
+      }
+    });
+  },60);
+}
+function fecharModal(e){if(e.target===document.getElementById('modal-aluno'))document.getElementById('modal-aluno').classList.remove('open');}
+
+// ── RELATÓRIOS PDF ─────────────────────────────────────────
+function popSelects(){
+  const turmas=unique(APP.notas.map(r=>r.TURMA));
+  const discs=unique(APP.notas.map(r=>r.DISCIPLINA));
+  ['sel-turma-pdf','sel-turma-aluno'].forEach(id=>{document.getElementById(id).innerHTML=turmas.map(t=>`<option value="${t}">${t}</option>`).join('');});
+  document.getElementById('sel-disc-pdf').innerHTML=discs.map(d=>`<option value="${d}">${d}</option>`).join('');
+  document.getElementById('sel-turma-disc-pdf').innerHTML='<option value="">Todas</option>'+turmas.map(t=>`<option value="${t}">${t}</option>`).join('');
+  popAluno();
+}
+function popAluno(){
+  const t=document.getElementById('sel-turma-aluno').value;
+  const al=unique(APP.notas.filter(r=>r.TURMA===t).map(r=>r.ESTUDANTE));
+  document.getElementById('sel-aluno-pdf').innerHTML=al.map(a=>`<option value="${a}">${a}</option>`).join('');
+}
+
+function estilosPDF(){
+  return `body{font-family:Arial,sans-serif;padding:22px;color:#111;}
+  h1{font-size:17px;margin:0 0 2px;}h2{font-size:12px;color:#6b7280;margin:0 0 14px;}
+  .stats{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;}
+  .stat{padding:9px 16px;border-radius:7px;text-align:center;font-size:12px;min-width:80px;}
+  table{width:100%;border-collapse:collapse;}
+  th{background:#f9fafb;padding:6px 9px;text-align:left;font-size:11px;color:#374151;border-bottom:1px solid #e5e7eb;white-space:nowrap;}
+  td{padding:6px 9px;border-bottom:1px solid #f3f4f6;font-size:12px;}
+  .ok{color:#057a55;font-weight:700;}.re{color:#c81e1e;font-weight:700;}.am{color:#b45309;font-weight:700;}.ne{color:#9ca3af;}
+  .b-ap{background:#def7ec;color:#014737;padding:1px 7px;border-radius:99px;font-size:10px;font-weight:700;}
+  .b-re{background:#fde8e8;color:#771d1d;padding:1px 7px;border-radius:99px;font-size:10px;font-weight:700;}
+  .b-al{background:#fef3c7;color:#78350f;padding:1px 7px;border-radius:99px;font-size:10px;font-weight:700;}
+  @media print{body{padding:0;}}`;
+}
+
+function fmtNotaPDF(v){if(v===null)return'<span class="ne">—</span>';return`<span class="${v>=CFG.mediaAprov?'ok':'re'}">${v.toFixed(1).replace('.',',')}</span>`;}
+function fmtSitPDF(media,alFreq,parc){
+  const p=parc?' (parc.)':'';
+  if(media===null)return'—';
+  if(media>=CFG.mediaAprov) return alFreq?`<span class="b-al">Aprov. ⚠freq.${p}</span>`:`<span class="b-ap">Aprovado${p}</span>`;
+  return`<span class="b-re">Reprovado${p}</span>`;
+}
+
+function pdfTurma(){
+  const t=document.getElementById('sel-turma-pdf').value;
+  if(!t) return alert('Selecione uma turma.');
+  const regs=APP.notas.filter(r=>r.TURMA===t);
+  const discs=unique(regs.map(r=>r.DISCIPLINA));
+  const alunos=unique(regs.map(r=>r.ESTUDANTE));
+  let ap=0,rp=0,alF=0;
+  alunos.forEach(a=>{const ds=regs.filter(r=>r.ESTUDANTE===a).map(r=>dadosReg(r));if(ds.some(d=>d.sit==='Reprovado'))rp++;else ap++;if(ds.some(d=>d.alFreq))alF++;});
+  const rows=alunos.map(a=>{
+    return discs.map(d=>{
+      const r=regs.find(x=>x.ESTUDANTE===a&&x.DISCIPLINA===d);
+      if(!r) return null;
+      const dd=dadosReg(r);
+      return`<tr><td style="font-weight:600;">${a}</td><td>${d}</td>
+        ${['b1','b2','b3','b4'].map(b=>`<td style="text-align:center;">${fmtNotaPDF(r[b])}</td>`).join('')}
+        <td style="text-align:center;">${fmtNotaPDF(dd.media)}</td>
+        <td style="text-align:center;">${dd.freq?`<span class="${dd.freq.pct<CFG.freqMin?'am':'ok'}">${dd.freq.pct.toFixed(1)}%</span>`:'<span class="ne">—</span>'}</td>
+        <td style="text-align:center;">${fmtSitPDF(dd.media,dd.alFreq,dd.parc)}</td></tr>`;
+    }).filter(Boolean).join('');
+  }).join('');
+  const w=window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Turma ${t}</title><style>${estilosPDF()}</style></head><body>
+  <h1>${CFG.escola} — Turma ${t}</h1><h2>${CFG.etapa} · Conselho de Classe · ${new Date().toLocaleDateString('pt-BR')}</h2>
+  <div class="stats">
+    <div class="stat" style="background:#def7ec;color:#014737;"><strong>${ap}</strong><br>Aprovados</div>
+    <div class="stat" style="background:#fde8e8;color:#771d1d;"><strong>${rp}</strong><br>Reprovados</div>
+    <div class="stat" style="background:#fef3c7;color:#78350f;"><strong>${alF}</strong><br>Alerta freq.</div>
+    <div class="stat" style="background:#f3f4f6;color:#374151;"><strong>${alunos.length}</strong><br>Alunos</div>
+  </div>
+  <table><thead><tr><th>Aluno</th><th>Disciplina</th><th style="text-align:center;">B1</th><th style="text-align:center;">B2</th><th style="text-align:center;">B3</th><th style="text-align:center;">B4</th><th style="text-align:center;">Média</th><th style="text-align:center;">Frequência</th><th>Situação</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  <script>window.onload=()=>window.print();<\/script></body></html>`);
+  w.document.close();
+}
+
+function pdfAluno(){
+  const nome=document.getElementById('sel-aluno-pdf').value;
+  const turma=document.getElementById('sel-turma-aluno').value;
+  if(!nome) return alert('Selecione um aluno.');
+  pdfAlunoNome(nome,turma);
+}
+
+function pdfAlunoNome(nome,turma){
+  const regs=APP.notas.filter(r=>r.ESTUDANTE===nome&&r.TURMA===turma);
+  if(!regs.length) return;
+  const todos=regs.map(r=>dadosReg(r));
+  const temRep=todos.some(d=>d.sit==='Reprovado');
+  const temAlF=todos.some(d=>d.alFreq);
+  const sitGeral=temRep?'Reprovado em disciplina(s)':temAlF?'Aprovado ⚠ frequência':'Aprovado';
+  const sitCls=temRep?'b-re':temAlF?'b-al':'b-ap';
+  const rows=regs.map(r=>{
+    const d=dadosReg(r);
+    return`<tr><td style="font-weight:600;">${r.DISCIPLINA}</td>
+      ${['b1','b2','b3','b4'].map(b=>`<td style="text-align:center;">${fmtNotaPDF(r[b])}</td>`).join('')}
+      <td style="text-align:center;">${fmtNotaPDF(d.media)}</td>
+      <td style="text-align:center;">${d.freq?`<span class="${d.freq.pct<CFG.freqMin?'am':'ok'}">${d.freq.pct.toFixed(1)}% (${d.freq.faltas} falta${d.freq.faltas!==1?'s':''}/${d.freq.aulas} aulas)</span>`:'<span class="ne">—</span>'}</td>
+      <td style="text-align:center;">${fmtSitPDF(d.media,d.alFreq,d.parc)}</td>
+      <td style="font-size:11px;color:#6b7280;">${d.media!==null&&d.media<CFG.mediaAprov?'Solicitar comp. nota':d.alFreq?'Solicitar comp. freq.':''}</td>
+    </tr>`;
+  }).join('');
+  const w=window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Boletim ${nome}</title><style>${estilosPDF()}
+  .header{background:#1a56db;color:#fff;padding:14px 18px;border-radius:8px;margin-bottom:18px;}
+  .header h1{color:#fff;font-size:16px;}.header p{font-size:11px;opacity:.85;margin:0;}</style></head><body>
+  <div class="header"><h1>${nome}</h1><p>Turma ${turma} · ${CFG.escola} · ${CFG.etapa} · ${new Date().toLocaleDateString('pt-BR')}</p></div>
+  <div class="stats">
+    <div class="stat" style="background:${temRep?'#fde8e8':temAlF?'#fef3c7':'#def7ec'};color:${temRep?'#771d1d':temAlF?'#78350f':'#014737'};"><strong>${sitGeral}</strong><br>Situação geral</div>
+  </div>
+  <table><thead><tr><th>Disciplina</th><th style="text-align:center;">B1</th><th style="text-align:center;">B2</th><th style="text-align:center;">B3</th><th style="text-align:center;">B4</th><th style="text-align:center;">Média</th><th>Frequência</th><th>Situação</th><th>Observação</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  <script>window.onload=()=>window.print();<\/script></body></html>`);
+  w.document.close();
+}
+
+function pdfDisc(){
+  const disc=document.getElementById('sel-disc-pdf').value;
+  const turma=document.getElementById('sel-turma-disc-pdf').value;
+  if(!disc) return alert('Selecione uma disciplina.');
+  const regs=APP.notas.filter(r=>r.DISCIPLINA===disc&&(!turma||r.TURMA===turma));
+  if(!regs.length) return alert('Nenhum dado encontrado.');
+  let ap=0,rp=0,alF=0;
+  regs.forEach(r=>{const d=dadosReg(r);if(d.sit==='Reprovado')rp++;else if(d.sit==='Aprovado')ap++;if(d.alFreq)alF++;});
+  const rows=regs.map(r=>{
+    const d=dadosReg(r);
+    const obs=d.media!==null&&d.media<CFG.mediaAprov?'Solicitar comp. de nota':d.alFreq?'Solicitar comp. de frequência':'';
+    return`<tr><td style="font-weight:600;">${r.ESTUDANTE}</td>
+      <td style="text-align:center;"><span class="b-info" style="background:#e8f0fe;color:#1e3a8a;padding:1px 7px;border-radius:99px;font-size:10px;font-weight:700;">${r.TURMA}</span></td>
+      ${['b1','b2','b3','b4'].map(b=>`<td style="text-align:center;">${fmtNotaPDF(r[b])}</td>`).join('')}
+      <td style="text-align:center;">${fmtNotaPDF(d.media)}</td>
+      <td style="text-align:center;">${d.freq?`<span class="${d.freq.pct<CFG.freqMin?'am':'ok'}">${d.freq.pct.toFixed(1)}%</span>`:'<span class="ne">—</span>'}</td>
+      <td style="text-align:center;">${fmtSitPDF(d.media,d.alFreq,d.parc)}</td>
+      <td style="font-size:11px;color:#b45309;font-weight:600;">${obs}</td>
+    </tr>`;
+  }).join('');
+  const w=window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${disc}</title><style>${estilosPDF()}</style></head><body>
+  <h1>${disc}${turma?' — Turma '+turma:' — Todas as turmas'}</h1>
+  <h2>${CFG.escola} · ${CFG.etapa} · Conselho de Classe · ${new Date().toLocaleDateString('pt-BR')}</h2>
+  <div class="stats">
+    <div class="stat" style="background:#def7ec;color:#014737;"><strong>${ap}</strong><br>Aprovados</div>
+    <div class="stat" style="background:#fde8e8;color:#771d1d;"><strong>${rp}</strong><br>Reprovados</div>
+    <div class="stat" style="background:#fef3c7;color:#78350f;"><strong>${alF}</strong><br>Alerta freq.</div>
+    <div class="stat" style="background:#f3f4f6;"><strong>${regs.length}</strong><br>Total</div>
+  </div>
+  <table><thead><tr><th>Aluno</th><th>Turma</th><th style="text-align:center;">B1</th><th style="text-align:center;">B2</th><th style="text-align:center;">B3</th><th style="text-align:center;">B4</th><th style="text-align:center;">Média</th><th style="text-align:center;">Freq.</th><th>Situação</th><th>Observação</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  <script>window.onload=()=>window.print();<\/script></body></html>`);
+  w.document.close();
+}
+
+// ── DEMO ───────────────────────────────────────────────────
+function carregarDemo(){
+  const nomes=[
+    'ALEXIA RAISSA ALMEIDA ALVES','ALYANDRO ARIEL SANTOS FREITAS','CRISTOFFER MIGUEL FERREIRA LIMA',
+    'IRANI CAIRAC PRESTES NETO','JOAO LUCAS BORGES DE OLIVEIRA','LEANDRO HENRIQUE DE ALMEIDA',
+    'LUIS GUSTAVO DE OLIVEIRA SANTOS','MARIA FERNANDA COSTA SILVA','PEDRO HENRIQUE RAMOS JUNIOR',
+    'ANA CAROLINA MENDES SOUSA','GABRIEL TORRES NASCIMENTO','BEATRIZ LIMA CAVALCANTE',
+    'LUCAS AUGUSTO FERREIRA DIAS','JULIA APARECIDA MOREIRA COSTA','THIAGO CAMARGO BORGES',
+    'LARISSA BRITO CARVALHO','VINICIUS MARTINS PRADO','CAMILA RODRIGUES PEREIRA',
+    'FELIPE SOUZA ALBUQUERQUE','NATHALIA GOMES RIBEIRO'
+  ];
+  const turmas=['2ªA','2ªC','3ªA'];
+  const discs=['MATEMÁTICA','PROGRAMAÇÃO','ROBÓTICA'];
+  APP.notas=[];APP.faltas=[];
+
+  turmas.forEach(t=>{
+    const al=nomes.slice(0, t==='3ªA'?18:20);
+    discs.forEach(d=>{
+      al.forEach(a=>{
+        const rnd=Math.random();
+        const b1=+(rnd<.1?1.5+Math.random()*2:rnd<.25?3+Math.random()*1.5:5+Math.random()*5).toFixed(1);
+        const b2=+(Math.min(10,Math.max(0,b1+(Math.random()*2-0.8)))).toFixed(1);
+        const b3=+(Math.min(10,Math.max(0,b2+(Math.random()*2-0.7)))).toFixed(1);
+        const b4=Math.random()>.3?+(Math.min(10,Math.max(0,b3+(Math.random()*2-0.5)))).toFixed(1):null;
+        APP.notas.push({ESTUDANTE:a,TURMA:t,DISCIPLINA:d,b1,b2,b3,b4});
+        const a1=38+Math.floor(Math.random()*4);
+        const a2=39+Math.floor(Math.random()*4);
+        const a3=38+Math.floor(Math.random()*5);
+        const a4=b4!==null?39+Math.floor(Math.random()*4):null;
+        const faltas=Math.random()<.15?Math.floor(Math.random()*15)+5:Math.floor(Math.random()*5);
+        APP.faltas.push({ESTUDANTE:a,TURMA:t,DISCIPLINA:d,
+          a1,f1:Math.floor(Math.random()*4),
+          a2,f2:Math.floor(faltas*.4),
+          a3,f3:Math.floor(faltas*.4),
+          a4,f4:a4?Math.floor(faltas*.2):null
+        });
+      });
+    });
+  });
+
+  document.getElementById('status-up').innerHTML=
+    `<span style="color:var(--verde);">✓ Dados de exemplo carregados: ${APP.notas.length} registros em ${turmas.length} turmas.</span>`;
+  buildNav();
+  showSection('geral');
+}
+
+// ── MODELO EXCEL ───────────────────────────────────────────
+function baixarModelo(){
+  const wb = XLSX.utils.book_new();
+
+  // Aba Notas
+  const notasData = [
+    ['ESTUDANTE','TURMA','DISCIPLINA','NOTA 1º BIMESTRE','NOTA 2º BIMESTRE','NOTA 3º BIMESTRE','NOTA 4º BIMESTRE'],
+    ['NOME DO ALUNO','2ªA','MATEMÁTICA',7,8,6,7],
+    ['OUTRO ALUNO','2ªA','MATEMÁTICA',5,4,'',''],
+    ['NOME DO ALUNO','2ªA','ROBÓTICA',8,9,7,8],
+    ['OUTRO ALUNO','2ªA','ROBÓTICA',6,5,6,''],
+  ];
+  const wsNotas = XLSX.utils.aoa_to_sheet(notasData);
+  wsNotas['!cols']=[{wch:35},{wch:8},{wch:20},{wch:18},{wch:18},{wch:18},{wch:18}];
+  XLSX.utils.book_append_sheet(wb, wsNotas, 'Notas');
+
+  // Aba FALTAS
+  const faltasData = [
+    ['ESTUDANTE','TURMA','DISCIPLINA','AULAS 1º BIM','FALTAS 1º BIM','AULAS 2º BIM','FALTAS 2º BIM','AULAS 3º BIM','FALTAS 3º BIM','AULAS 4º BIM','FALTAS 4º BIM'],
+    ['NOME DO ALUNO','2ªA','MATEMÁTICA',38,0,40,2,39,5,39,3],
+    ['OUTRO ALUNO','2ªA','MATEMÁTICA',38,4,40,14,'','','',''],
+    ['NOME DO ALUNO','2ªA','ROBÓTICA',20,0,22,1,20,2,22,1],
+    ['OUTRO ALUNO','2ªA','ROBÓTICA',20,3,22,8,'','','',''],
+  ];
+  const wsFaltas = XLSX.utils.aoa_to_sheet(faltasData);
+  wsFaltas['!cols']=[{wch:35},{wch:8},{wch:20},{wch:14},{wch:14},{wch:14},{wch:14},{wch:14},{wch:14},{wch:14},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, wsFaltas, 'FALTAS');
+
+  XLSX.writeFile(wb, 'modelo_conselho_classe.xlsx');
+}
+
+// ── LIMPAR ─────────────────────────────────────────────────
+function limpar(){
+  if(!confirm('Limpar todos os dados?')) return;
+  APP.notas=[];APP.faltas=[];APP.turmaSel=null;APP.discSel=null;
+  Object.values(APP.charts).forEach(c=>c.destroy());APP.charts={};
+  document.getElementById('nav-turmas').innerHTML='';
+  document.getElementById('nav-discs').innerHTML='';
+  document.getElementById('status-up').innerHTML='';
+  document.getElementById('inp-p').value='';
+  showSection('upload');
+}
+
+// ── INIT ───────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded',()=>{
+  document.getElementById('loader').style.display='none';
+});
