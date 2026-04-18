@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Class Stride</title>
+<title>Conselho de Classe</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -11,15 +11,21 @@
 
 <div id="loader" style="display:none;"><div class="spin"></div><p id="loader-msg">Carregando...</p></div>
 
+<!-- OVERLAY MOBILE -->
+<div id="sb-overlay" onclick="fecharSidebar()"></div>
+
 <!-- SIDEBAR -->
 <nav id="sidebar">
   <div class="sb-header">
     <div class="sb-logo"><i class="bi bi-mortarboard-fill"></i></div>
     <div><div class="sb-title">Conselho de Classe</div><div class="sb-sub">Ensino Médio</div></div>
+    <button class="sb-close" onclick="fecharSidebar()" aria-label="Fechar menu">×</button>
   </div>
   <div class="sb-label">Início</div>
   <a class="nav-link active" data-s="upload" onclick="showSection('upload')"><i class="bi bi-cloud-upload"></i> Importar dados</a>
   <a class="nav-link" data-s="geral" onclick="showSection('geral')"><i class="bi bi-grid-3x3-gap"></i> Painel geral</a>
+  <a class="nav-link" data-s="medalhas" onclick="showSection('medalhas')"><i class="bi bi-trophy-fill"></i> Medalhistas</a>
+  <a class="nav-link" data-s="digital" onclick="showSection('digital')"><i class="bi bi-laptop"></i> Material Digital</a>
   <div class="sb-label">Por Turma</div>
   <div id="nav-turmas"></div>
   <div class="sb-label">Por Disciplina</div>
@@ -32,6 +38,7 @@
 <!-- MAIN -->
 <div id="main">
   <div class="topbar">
+    <button class="topbar-menu-btn" onclick="abrirSidebar()" aria-label="Abrir menu"><i class="bi bi-list"></i></button>
     <div><div class="tb-title" id="tb-title">Importar dados</div><div class="tb-sub" id="tb-sub">Selecione os arquivos para começar</div></div>
     <div class="btn-group" id="tb-actions"></div>
   </div>
@@ -42,7 +49,7 @@
       <div class="card" style="margin-bottom:20px;">
         <div class="card-head"><div class="ch-icon" style="background:#eff6ff;color:var(--azul);"><i class="bi bi-cloud-upload"></i></div><h2>Importar planilhas</h2></div>
         <div class="card-body">
-          <p style="font-size:13px;color:var(--cinza);margin-bottom:14px;">Selecione <strong>um ou vários arquivos</strong> de uma vez. Cada arquivo deve ter as abas <strong>Notas</strong> e <strong>FALTAS</strong>. O sistema lê e cruza as duas automaticamente.</p>
+          <p style="font-size:13px;color:var(--cinza);margin-bottom:14px;">Selecione <strong>um ou vários arquivos</strong> de uma vez. Cada arquivo deve ter as abas <strong>Notas</strong>, <strong>FALTAS</strong> e opcionalmente <strong>DIGITAL</strong>. O sistema lê e cruza as abas automaticamente.</p>
           <div class="uz" id="uz-p" onclick="document.getElementById('inp-p').click()">
             <input type="file" id="inp-p" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="handleUpload(this)">
             <div ondragover="dragOver(event,'uz-p')" ondragleave="dragLeave('uz-p')" ondrop="drop(event,'uz-p')">
@@ -58,7 +65,7 @@
       <div class="card">
         <div class="card-head"><div class="ch-icon" style="background:#fef3c7;color:var(--amber);"><i class="bi bi-lightbulb"></i></div><h2>Formato esperado da planilha</h2></div>
         <div class="card-body">
-          <div class="ib"><i class="bi bi-info-circle-fill"></i><span>A planilha deve ter <strong>duas abas</strong>: <strong>Notas</strong> e <strong>FALTAS</strong>. O sistema cruza as duas pelo trio ESTUDANTE + TURMA + DISCIPLINA. As colunas calculadas (Média, Situação, % Presença) são ignoradas — o dashboard recalcula tudo.</span></div>
+          <div class="ib"><i class="bi bi-info-circle-fill"></i><span>A planilha deve ter <strong>duas ou três abas</strong>: <strong>Notas</strong>, <strong>FALTAS</strong> e (opcional) <strong>DIGITAL</strong>. O sistema cruza as abas pelo trio ESTUDANTE + TURMA + DISCIPLINA. As colunas calculadas (Média, Situação, % Presença) são ignoradas — o dashboard recalcula tudo.</span></div>
           <p style="font-size:12px;font-weight:600;color:var(--cinza-esc);margin-bottom:8px;">Aba <strong>Notas</strong> — professor preenche:</p>
           <div class="tw" style="margin-bottom:16px;">
             <table><thead><tr><th>ESTUDANTE</th><th>TURMA</th><th>DISCIPLINA</th><th>NOTA 1º BIMESTRE</th><th>NOTA 2º BIMESTRE</th><th>NOTA 3º BIMESTRE</th><th>NOTA 4º BIMESTRE</th></tr></thead>
@@ -68,6 +75,11 @@
           <div class="tw" style="margin-bottom:16px;">
             <table><thead><tr><th>ESTUDANTE</th><th>TURMA</th><th>DISCIPLINA</th><th>AULAS 1º BIM</th><th>FALTAS 1º BIM</th><th>AULAS 2º BIM</th><th>FALTAS 2º BIM</th><th>AULAS 3º BIM</th><th>FALTAS 3º BIM</th><th>AULAS 4º BIM</th><th>FALTAS 4º BIM</th></tr></thead>
             <tbody><tr><td>ALEXIA RAISSA ALMEIDA ALVES</td><td>2ªA</td><td>MATEMÁTICA</td><td>38</td><td class="nota n-ok">0</td><td>40</td><td class="nota n-ok">2</td><td>39</td><td class="nota n-re">11</td><td class="nota n-ne">—</td><td class="nota n-ne">—</td></tr></tbody></table>
+          </div>
+          <p style="font-size:12px;font-weight:600;color:var(--cinza-esc);margin-bottom:8px;">Aba <strong>DIGITAL</strong> — coordenação preenche (por turma/disciplina):</p>
+          <div class="tw" style="margin-bottom:16px;">
+            <table><thead><tr><th>TURMA</th><th>DISCIPLINA</th><th>PREVISTO 1º BIM</th><th>CONCLUIDO 1º BIM</th><th>PREVISTO 2º BIM</th><th>CONCLUIDO 2º BIM</th><th>PREVISTO 3º BIM</th><th>CONCLUIDO 3º BIM</th><th>PREVISTO 4º BIM</th><th>CONCLUIDO 4º BIM</th></tr></thead>
+            <tbody><tr><td>2ªA</td><td>MATEMÁTICA</td><td>10</td><td>10</td><td>10</td><td>8</td><td>10</td><td>5</td><td>10</td><td class="nota n-ne">—</td></tr></tbody></table>
           </div>
           <div class="btn-group">
             <button class="btn btn-outline btn-sm" onclick="baixarModelo()"><i class="bi bi-download"></i> Baixar modelo .xlsx</button>
@@ -89,6 +101,11 @@
           <div class="card-head"><div class="ch-icon" style="background:#f0fdf4;color:var(--verde);"><i class="bi bi-graph-up"></i></div><h2>Média por disciplina</h2></div>
           <div class="card-body"><div class="chart-box" style="height:270px;"><canvas id="ch-media-disc"></canvas></div></div>
         </div>
+      </div>
+      <!-- Gráfico Material Digital no Painel Geral -->
+      <div class="card" id="card-digital-geral" style="display:none;">
+        <div class="card-head"><div class="ch-icon" style="background:var(--roxo-cl);color:var(--roxo);"><i class="bi bi-laptop"></i></div><h2>Cumprimento do Material Digital por disciplina</h2></div>
+        <div class="card-body"><div class="chart-box" style="height:260px;"><canvas id="ch-digital-geral"></canvas></div></div>
       </div>
       <div class="card">
         <div class="card-head"><div class="ch-icon" style="background:#fef3c7;color:var(--amber);"><i class="bi bi-table"></i></div><h2>Resumo por turma</h2></div>
@@ -112,11 +129,19 @@
           <div class="card-body"><div class="chart-box" style="height:250px;"><canvas id="ch-turma-sit"></canvas></div></div>
         </div>
       </div>
+      <!-- Cards de Material Digital por disciplina na visão de turma -->
+      <div id="digital-turma-section" style="display:none;">
+        <div class="card">
+          <div class="card-head"><div class="ch-icon" style="background:var(--roxo-cl);color:var(--roxo);"><i class="bi bi-laptop"></i></div><h2>Material Digital — Progresso por disciplina</h2></div>
+          <div class="card-body" id="digital-turma-body"></div>
+        </div>
+      </div>
       <div class="card">
         <div class="card-head">
           <div class="ch-icon" style="background:#f0fdf4;color:var(--verde);"><i class="bi bi-people-fill"></i></div>
           <h2 id="titulo-alunos">Alunos</h2>
           <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;">
+            <select id="filtro-disc-turma" onchange="renderTurmaComFiltro()" style="font-size:12px;padding:5px 8px;"><option value="">Todas as disciplinas</option></select>
             <select id="filtro-sit" onchange="renderAlunos()" style="font-size:12px;padding:5px 8px;">
               <option value="">Todas as situações</option>
               <option value="Aprovado">Aprovado</option>
@@ -160,6 +185,46 @@
           <thead><tr><th>Aluno</th><th>Turma</th><th>B1</th><th>B2</th><th>B3</th><th>B4</th><th>Média</th><th>Frequência</th><th>Situação</th><th>Alerta</th></tr></thead>
           <tbody id="tb-disc"></tbody>
         </table></div></div>
+      </div>
+    </div>
+
+    <!-- ══ MEDALHAS ══ -->
+    <div id="section-medalhas" class="section">
+      <div class="mg" id="mg-medalhas"></div>
+      <div id="medalhas-filtro" style="margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <label style="font-size:13px;font-weight:500;color:var(--cinza-esc);">Turma:</label>
+        <select id="filtro-turma-medalhas" onchange="renderMedalhas()" style="font-size:13px;padding:6px 10px;">
+          <option value="">Todas as turmas</option>
+        </select>
+      </div>
+      <div id="medalhas-content"></div>
+    </div>
+
+    <!-- ══ MATERIAL DIGITAL ══ -->
+    <div id="section-digital" class="section">
+      <div class="mg" id="mg-digital"></div>
+      <div class="g2">
+        <div class="card">
+          <div class="card-head"><div class="ch-icon" style="background:var(--roxo-cl);color:var(--roxo);"><i class="bi bi-bar-chart-fill"></i></div><h2>Cumprimento por disciplina</h2></div>
+          <div class="card-body"><div class="chart-box" style="height:270px;"><canvas id="ch-digital-disc"></canvas></div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div class="ch-icon" style="background:var(--roxo-cl);color:var(--roxo);"><i class="bi bi-people-fill"></i></div><h2>Filtros</h2></div>
+          <div class="card-body">
+            <div style="margin-bottom:14px;">
+              <label style="font-size:12px;font-weight:600;color:var(--cinza-esc);display:block;margin-bottom:6px;">Turma</label>
+              <select id="filtro-digital-turma" onchange="renderDigital()" style="width:100%;font-size:13px;padding:7px 10px;"><option value="">Todas as turmas</option></select>
+            </div>
+            <div>
+              <label style="font-size:12px;font-weight:600;color:var(--cinza-esc);display:block;margin-bottom:6px;">Disciplina</label>
+              <select id="filtro-digital-disc" onchange="renderDigital()" style="width:100%;font-size:13px;padding:7px 10px;"><option value="">Todas as disciplinas</option></select>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="ch-icon" style="background:var(--roxo-cl);color:var(--roxo);"><i class="bi bi-laptop"></i></div><h2>Progresso por turma / disciplina</h2></div>
+        <div class="card-body" id="digital-cards-body"></div>
       </div>
     </div>
 
@@ -213,6 +278,57 @@
       <button class="mc-btn" onclick="document.getElementById('modal-aluno').classList.remove('open')">×</button>
     </div>
     <div class="mb" id="m-body"></div>
+  </div>
+</div>
+
+<!-- BANNER LGPD -->
+<div id="lgpd-banner">
+  <p>
+    <strong>🔒 Privacidade e proteção de dados (LGPD)</strong><br>
+    Este sistema processa dados de estudantes exclusivamente no seu navegador — <strong>nenhuma informação é enviada ou armazenada em servidores externos</strong>. Os arquivos importados permanecem apenas na sessão atual e são descartados ao fechar a aba.
+    <a onclick="abrirPolitica()">Saiba mais sobre como tratamos os dados.</a>
+  </p>
+  <div class="lgpd-btns">
+    <button class="lgpd-btn-rec" onclick="recusarCookies()">Apenas essencial</button>
+    <button class="lgpd-btn-ok" onclick="aceitarCookies()">Entendi e aceito</button>
+  </div>
+</div>
+
+<!-- MODAL POLÍTICA LGPD -->
+<div id="lgpd-modal" onclick="fecharPolitica(event)">
+  <div class="lm">
+    <div class="lm-head">
+      <h3>Política de Privacidade e Proteção de Dados</h3>
+      <button onclick="document.getElementById('lgpd-modal').classList.remove('open')">×</button>
+    </div>
+    <div class="lm-body">
+      <h4>1. Sobre este sistema</h4>
+      <p>O Dashboard de Conselho de Classe é uma ferramenta de uso interno escolar que processa dados de desempenho e frequência de estudantes. O sistema foi desenvolvido para funcionar inteiramente no navegador do usuário, sem dependência de servidores externos.</p>
+
+      <h4>2. Quais dados são tratados</h4>
+      <p>O sistema trata dados inseridos manualmente pelo usuário por meio de planilhas (.xlsx, .xls, .csv), que podem incluir: nome de estudantes, turma, disciplina, notas bimestrais e registro de frequência/faltas.</p>
+
+      <h4>3. Base legal (LGPD — Lei nº 13.709/2018)</h4>
+      <p>O tratamento se fundamenta no <strong>legítimo interesse</strong> da instituição de ensino para fins de acompanhamento pedagógico (art. 7º, IX da LGPD) e no <strong>cumprimento de obrigação legal</strong> referente ao registro e avaliação de estudantes (art. 7º, II).</p>
+
+      <h4>4. Como os dados são tratados</h4>
+      <p><strong>Processamento local:</strong> todos os cálculos (médias, frequência, situação) ocorrem exclusivamente no navegador do dispositivo do usuário.</p>
+      <p><strong>Sem transmissão:</strong> nenhum dado é enviado a servidores, APIs externas ou terceiros.</p>
+      <p><strong>Sem armazenamento persistente:</strong> os dados existem apenas enquanto a aba do navegador está aberta. Ao fechar ou recarregar a página, todos os dados são descartados.</p>
+      <p><strong>Sem cookies de rastreamento:</strong> o sistema utiliza apenas um cookie de preferência local (<code>lgpd_consent</code>) para registrar sua escolha neste banner, sem qualquer finalidade de rastreamento ou análise de comportamento.</p>
+
+      <h4>5. Responsabilidade</h4>
+      <p>A responsabilidade pelo correto uso dos dados e pela guarda das planilhas é da instituição de ensino e dos profissionais que operam o sistema. Recomenda-se não compartilhar planilhas com dados de estudantes em ambientes não seguros.</p>
+
+      <h4>6. Direitos dos titulares</h4>
+      <p>Nos termos da LGPD, os estudantes e responsáveis têm direito de acesso, correção e eliminação dos dados. Solicitações devem ser encaminhadas à coordenação pedagógica da instituição.</p>
+
+      <h4>7. Contato</h4>
+      <p>Dúvidas sobre privacidade devem ser direcionadas à equipe gestora da escola responsável pela implantação deste sistema.</p>
+    </div>
+    <div class="lm-footer">
+      <button class="lgpd-btn-ok" onclick="document.getElementById('lgpd-modal').classList.remove('open')">Fechar</button>
+    </div>
   </div>
 </div>
 

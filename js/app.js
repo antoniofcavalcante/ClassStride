@@ -1,13 +1,14 @@
 // ═══════════════════════════════════════════════════════════
 //  CONSELHO DE CLASSE — app.js
-//  Lê duas abas: "Notas" e "FALTAS"
+//  Lê três abas: "Notas", "FALTAS" e "DIGITAL"
 //  Cruza pelo trio ESTUDANTE + TURMA + DISCIPLINA
+//  DIGITAL: cruza por TURMA + DISCIPLINA (independente de FALTAS)
 //  Frequência calculada por bimestre (aulas dadas × faltas)
 //  Situação: nota >= 5 = Aprovado, < 5 = Reprovado
 //  Frequência < 75% = alerta (não reprova automaticamente)
 // ═══════════════════════════════════════════════════════════
 
-const APP = { notas: [], faltas: [], charts: {}, turmaSel: null, discSel: null };
+const APP = { notas: [], faltas: [], digital: [], charts: {}, turmaSel: null, discSel: null };
 
 const CFG = {
   mediaAprov: 5.0,
@@ -41,7 +42,160 @@ function chave(estudante, turma, disc) {
   return `${estudante}|${turma}|${disc}`;
 }
 
-// ── Cálculos principais ────────────────────────────────────
+// ── Plugins globais de gráficos ────────────────────────────
+
+// Plugin: percentual em cada barra (valor/total da série no bimestre)
+const pluginBarPct = {
+  id: 'barPct',
+  afterDatasetsDraw(chart) {
+    const { ctx, data } = chart;
+    if (chart.config.type !== 'bar') return;
+    const isHoriz = chart.config.options?.indexAxis === 'y';
+    data.datasets.forEach((ds, di) => {
+      const meta = chart.getDatasetMeta(di);
+      if (meta.hidden) return;
+      meta.data.forEach((bar, i) => {
+        const val = ds.data[i];
+        if (val === null || val === undefined || val === 0) return;
+        // Total da barra naquele índice (soma de todos datasets)
+        const total = data.datasets.reduce((s, d2) => s + (d2.data[i] || 0), 0);
+        if (!total) return;
+        const pct = Math.round(val / total * 100);
+        if (pct < 8) return; // não mostrar em barras muito pequenas
+        const { x, y, width, height } = bar;
+        ctx.save();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        if (isHoriz) {
+          // barra horizontal: texto dentro da barra à direita
+          const cx = x - (x - bar.base) / 2;
+          if (Math.abs(x - bar.base) > 34) ctx.fillText(pct + '%', cx, y);
+        } else {
+          // barra vertical: texto dentro da barra no centro
+          if (height > 18) ctx.fillText(pct + '%', x, y + height / 2);
+        }
+        ctx.restore();
+      });
+    });
+  }
+};
+
+// Plugin: valor médio (nota) em barras horizontais de média
+const pluginBarValor = {
+  id: 'barValor',
+  afterDatasetsDraw(chart) {
+    if (chart.config.type !== 'bar') return;
+    if (chart.config.options?.indexAxis !== 'y') return;
+    if (chart.data.datasets.length !== 1) return; // só para gráficos de média única
+    const { ctx, data } = chart;
+    data.datasets[0].data.forEach((val, i) => {
+      if (!val) return;
+      const meta = chart.getDatasetMeta(0);
+      const bar = meta.data[i];
+      const { x, y } = bar;
+      ctx.save();
+      ctx.fillStyle = '#374151';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(val.toFixed(1).replace('.', ','), x + 6, y);
+      ctx.restore();
+    });
+  }
+};
+
+// Plugin: anotação de variação % nos gráficos de linha
+const pluginLinePct = {
+  id: 'linePct',
+  afterDatasetsDraw(chart) {
+    if (chart.config.type !== 'line') return;
+    const { ctx, data, scales } = chart;
+    data.datasets.forEach((ds, di) => {
+      const meta = chart.getDatasetMeta(di);
+      if (meta.hidden) return;
+      const pts = meta.data.filter((_, i) => ds.data[i] !== null && ds.data[i] !== undefined);
+      pts.forEach((pt, pi) => {
+        const idx = meta.data.indexOf(pt);
+        if (idx === 0) return;
+        // Achar o ponto anterior não-nulo
+        let prevIdx = idx - 1;
+        while (prevIdx >= 0 && (ds.data[prevIdx] === null || ds.data[prevIdx] === undefined)) prevIdx--;
+        if (prevIdx < 0) return;
+        const prev = ds.data[prevIdx];
+        const curr = ds.data[idx];
+        if (prev === null || curr === null) return;
+        const delta = curr - prev;
+        if (Math.abs(delta) < 0.05) return;
+        const sign = delta > 0 ? '+' : '';
+        const label = sign + delta.toFixed(1).replace('.', ',');
+        ctx.save();
+        ctx.font = 'bold 10px sans-serif';
+        ctx.fillStyle = delta > 0 ? '#057a55' : '#c81e1e';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(label, pt.x, pt.y - 6);
+        ctx.restore();
+      });
+    });
+  }
+};
+
+// Plugin: percentual nas fatias do doughnut
+function makePctLabelPlugin(getTotal) {
+  return {
+    id: 'pctLabel_' + Math.random(),
+    afterDraw(chart) {
+      const total = typeof getTotal === 'function' ? getTotal() : getTotal;
+      if (!total) return;
+      const ctx2 = chart.ctx;
+      chart.data.datasets.forEach((ds, di) => {
+        const meta = chart.getDatasetMeta(di);
+        meta.data.forEach((arc, i) => {
+          const val = ds.data[i];
+          if (!val) return;
+          const pct = Math.round(val / total * 100);
+          if (pct < 5) return;
+          const mid = arc.startAngle + (arc.endAngle - arc.startAngle) / 2;
+          const r = (arc.innerRadius + arc.outerRadius) / 2;
+          ctx2.save();
+          ctx2.fillStyle = '#fff';
+          ctx2.font = 'bold 13px sans-serif';
+          ctx2.textAlign = 'center';
+          ctx2.textBaseline = 'middle';
+          ctx2.fillText(pct + '%', arc.x + r * Math.cos(mid), arc.y + r * Math.sin(mid));
+          ctx2.restore();
+        });
+      });
+    }
+  };
+}
+
+// Opções base reutilizáveis
+function optsBarEmpilhado(extra) {
+  return Object.assign({
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top', labels: { font: { size: 12 }, boxWidth: 12 } } },
+    scales: { x: { stacked: true }, y: { stacked: true, ticks: { stepSize: 1 } } }
+  }, extra);
+}
+function optsBarHoriz(extra) {
+  return Object.assign({
+    indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { x: { min: 0, max: 10 } }
+  }, extra);
+}
+function optsLinha(extra) {
+  return Object.assign({
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top', labels: { font: { size: 12 }, boxWidth: 12 } } },
+    scales: { y: { min: 0, max: 10 } }
+  }, extra);
+}
+
+
 
 // Retorna objeto com b1..b4 (null se vazio)
 function notasAluno(n) {
@@ -148,6 +302,96 @@ function fmtEvol(n) {
   return '<span class="evol-neu">= 0</span>';
 }
 
+// ── MATERIAL DIGITAL — Funções de cálculo ─────────────────
+
+// Busca registro digital para turma/disciplina
+function getDigital(turma, disc) {
+  return APP.digital.filter(d => d.TURMA === turma && d.DISCIPLINA === disc);
+}
+
+// Calcula percentual de cumprimento digital para uma lista de registros (total)
+// Ignora bimestres com previsto = 0 ou null
+function calcDigital(registros) {
+  let totalPrev = 0, totalConc = 0;
+  registros.forEach(r => {
+    [1, 2, 3, 4].forEach(b => {
+      const prev = toNum(r[`prev${b}`]);
+      const conc = toNum(r[`conc${b}`]);
+      if (prev && prev > 0) {
+        totalPrev += prev;
+        totalConc += (conc || 0);
+      }
+    });
+  });
+  if (!totalPrev) return null;
+  return {
+    previsto: totalPrev,
+    concluido: totalConc,
+    pct: +((totalConc / totalPrev) * 100).toFixed(1)
+  };
+}
+
+// Calcula percentual de cumprimento digital por bimestre individualmente
+// Retorna array de 4 objetos (null se bimestre sem previsto)
+function calcDigitalBimestres(registros) {
+  return [1, 2, 3, 4].map(b => {
+    let prev = 0, conc = 0;
+    registros.forEach(r => {
+      const p = toNum(r[`prev${b}`]);
+      const c = toNum(r[`conc${b}`]);
+      if (p && p > 0) { prev += p; conc += (c || 0); }
+    });
+    if (!prev) return null;
+    return {
+      bim: b,
+      previsto: prev,
+      concluido: conc,
+      pct: +((conc / prev) * 100).toFixed(1)
+    };
+  });
+}
+
+// HTML de card de progresso digital (roxo) — com breakdown por bimestre
+function fmtDigitalCard(turma, disc, registros) {
+  const calc = calcDigital(registros);
+  if (!calc) return '';
+  const pct = Math.min(100, calc.pct);
+  const cls = pct >= 80 ? 'digital-prog-ok' : pct >= 50 ? 'digital-prog-al' : 'digital-prog-re';
+
+  const bims = calcDigitalBimestres(registros);
+  const nomeBim = ['1º BIM', '2º BIM', '3º BIM', '4º BIM'];
+  const bimRows = bims.map((b, i) => {
+    if (!b) return '';
+    const bPct  = Math.min(100, b.pct);
+    const bCls  = bPct >= 80 ? 'digital-prog-ok' : bPct >= 50 ? 'digital-prog-al' : 'digital-prog-re';
+    return `
+      <div class="digital-bim-row">
+        <div class="digital-bim-label">
+          <span class="digital-bim-nome">${nomeBim[i]}</span>
+          <span class="digital-bim-info">${b.concluido} de ${b.previsto}</span>
+        </div>
+        <div class="digital-bim-bar-wrap">
+          <div class="digital-bim-bar ${bCls}" style="width:${bPct}%"></div>
+        </div>
+        <span class="digital-bim-pct ${bCls}">${b.pct.toFixed(0)}%</span>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="digital-card">
+      <div class="digital-card-head">
+        <span class="digital-card-turma">${turma}</span>
+        <span class="digital-card-disc">${disc}</span>
+        <span class="digital-pct ${cls}">${calc.pct.toFixed(1)}%</span>
+      </div>
+      <div class="digital-prog-bar-wrap">
+        <div class="digital-prog-bar ${cls}" style="width:${pct}%"></div>
+      </div>
+      <div class="digital-card-info">${calc.concluido} de ${calc.previsto} aulas concluídas</div>
+      <div class="digital-bim-breakdown">${bimRows}</div>
+    </div>`;
+}
+
 // ── Parser ─────────────────────────────────────────────────
 
 function colIdx(header, ...keys) {
@@ -228,13 +472,45 @@ function parseFaltasSheet(rows) {
   return parsed;
 }
 
+// Parser da aba DIGITAL
+// Colunas: TURMA, DISCIPLINA, PREVISTO 1º BIM, CONCLUIDO 1º BIM, ..., PREVISTO 4º BIM, CONCLUIDO 4º BIM
+function parseDigitalSheet(rows) {
+  if (!rows.length) return [];
+  const h = rows[0].map(c => String(c || '').trim().toUpperCase());
+  const iT = colIdx(h, 'TURMA');
+  const iD = colIdx(h, 'DISCIPLINA');
+  const iPrev1 = colIdx(h, 'PREVISTO 1', 'PREV1', 'PREV 1');
+  const iConc1 = colIdx(h, 'CONCLUIDO 1', 'CONC1', 'CONC 1');
+  const iPrev2 = colIdx(h, 'PREVISTO 2', 'PREV2', 'PREV 2');
+  const iConc2 = colIdx(h, 'CONCLUIDO 2', 'CONC2', 'CONC 2');
+  const iPrev3 = colIdx(h, 'PREVISTO 3', 'PREV3', 'PREV 3');
+  const iConc3 = colIdx(h, 'CONCLUIDO 3', 'CONC3', 'CONC 3');
+  const iPrev4 = colIdx(h, 'PREVISTO 4', 'PREV4', 'PREV 4');
+  const iConc4 = colIdx(h, 'CONCLUIDO 4', 'CONC4', 'CONC 4');
+
+  if (iT < 0 || iD < 0) return [];
+
+  return rows.slice(1).map(r => ({
+    TURMA:      String(r[iT] || '').trim().toUpperCase(),
+    DISCIPLINA: String(r[iD] || '').trim().toUpperCase(),
+    prev1: iPrev1 >= 0 ? toNum(r[iPrev1]) : null,
+    conc1: iConc1 >= 0 ? toNum(r[iConc1]) : null,
+    prev2: iPrev2 >= 0 ? toNum(r[iPrev2]) : null,
+    conc2: iConc2 >= 0 ? toNum(r[iConc2]) : null,
+    prev3: iPrev3 >= 0 ? toNum(r[iPrev3]) : null,
+    conc3: iConc3 >= 0 ? toNum(r[iConc3]) : null,
+    prev4: iPrev4 >= 0 ? toNum(r[iPrev4]) : null,
+    conc4: iConc4 >= 0 ? toNum(r[iConc4]) : null,
+  })).filter(r => r.TURMA && r.DISCIPLINA);
+}
+
 function lerArquivo(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = e => {
       try {
         const wb = XLSX.read(e.target.result, { type: 'binary', raw: false });
-        let notas = [], faltas = [];
+        let notas = [], faltas = [], digital = [];
         wb.SheetNames.forEach(name => {
           const ws   = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '' });
           const nUp  = name.trim().toUpperCase();
@@ -242,13 +518,15 @@ function lerArquivo(file) {
             notas = parseNotasSheet(ws);
           } else if (nUp.includes('FALT')) {
             faltas = parseFaltasSheet(ws);
+          } else if (nUp === 'DIGITAL' || nUp.includes('DIGITAL')) {
+            digital = parseDigitalSheet(ws);
           } else {
             // Aba desconhecida: tenta como notas se tiver colunas certas
             const tentativa = parseNotasSheet(ws);
             if (tentativa.length) notas.push(...tentativa);
           }
         });
-        resolve({ notas, faltas });
+        resolve({ notas, faltas, digital });
       } catch(err) { reject(err); }
     };
     reader.onerror = reject;
@@ -274,17 +552,20 @@ async function processarArquivos(files) {
   const statusEl = document.getElementById('status-up');
   try {
     for (const f of files) {
-      const { notas, faltas } = await lerArquivo(f);
+      const { notas, faltas, digital } = await lerArquivo(f);
       // Mescla sem duplicar
       const chN = new Set(APP.notas.map(r => chave(r.ESTUDANTE, r.TURMA, r.DISCIPLINA) + r.b1 + r.b2 + r.b3 + r.b4));
       notas.forEach(r => { if (!chN.has(chave(r.ESTUDANTE, r.TURMA, r.DISCIPLINA) + r.b1 + r.b2 + r.b3 + r.b4)) APP.notas.push(r); });
       const chF = new Set(APP.faltas.map(r => chave(r.ESTUDANTE, r.TURMA, r.DISCIPLINA)));
       faltas.forEach(r => { if (!chF.has(chave(r.ESTUDANTE, r.TURMA, r.DISCIPLINA))) APP.faltas.push(r); });
+      const chD = new Set(APP.digital.map(r => `${r.TURMA}|${r.DISCIPLINA}`));
+      digital.forEach(r => { if (!chD.has(`${r.TURMA}|${r.DISCIPLINA}`)) APP.digital.push(r); });
     }
     if (!APP.notas.length) throw new Error('Nenhuma nota encontrada. Verifique se a aba se chama "Notas".');
     const turmas = unique(APP.notas.map(r => r.TURMA));
     const discs  = unique(APP.notas.map(r => r.DISCIPLINA));
-    statusEl.innerHTML = `<span style="color:var(--verde);">✓ ${APP.notas.length} registros de notas · ${APP.faltas.length} de frequência · ${turmas.length} turma(s) · ${discs.length} disciplina(s)</span>`;
+    const digTxt = APP.digital.length ? ` · ${APP.digital.length} registro(s) digital` : '';
+    statusEl.innerHTML = `<span style="color:var(--verde);">✓ ${APP.notas.length} registros de notas · ${APP.faltas.length} de frequência${digTxt} · ${turmas.length} turma(s) · ${discs.length} disciplina(s)</span>`;
     buildNav();
     showSection('geral');
   } catch(err) {
@@ -308,6 +589,14 @@ function buildNav() {
     `<a class="nav-link" data-t="${t}" onclick="selTurma('${t}')"><i class="bi bi-people"></i> ${t}</a>`).join('');
   document.getElementById('nav-discs').innerHTML = discs.map(d =>
     `<a class="nav-link" data-d="${encodeURIComponent(d)}" onclick="selDisc('${encodeURIComponent(d)}')"><i class="bi bi-journal-bookmark"></i> ${d}</a>`).join('');
+  // Popular filtro de turma na seção medalhistas
+  const sel = document.getElementById('filtro-turma-medalhas');
+  if (sel) sel.innerHTML = '<option value="">Todas as turmas</option>' + turmas.map(t => `<option value="${t}">${t}</option>`).join('');
+  // Popular filtros da seção digital
+  const selDT = document.getElementById('filtro-digital-turma');
+  if (selDT) selDT.innerHTML = '<option value="">Todas as turmas</option>' + turmas.map(t => `<option value="${t}">${t}</option>`).join('');
+  const selDD = document.getElementById('filtro-digital-disc');
+  if (selDD) selDD.innerHTML = '<option value="">Todas as disciplinas</option>' + discs.map(d => `<option value="${d}">${d}</option>`).join('');
 }
 
 function showSection(id) {
@@ -320,6 +609,8 @@ function showSection(id) {
     geral:     ['Painel geral', 'Visão consolidada'],
     turma:     ['Turma ' + (APP.turmaSel || ''), ''],
     disc:      [APP.discSel || '', 'Análise e intervenções pedagógicas'],
+    medalhas:  ['🏆 Medalhistas', 'Ranking por desempenho e frequência'],
+    digital:   ['💻 Material Digital', 'Progresso do conteúdo digital por turma e disciplina'],
     relatorios:['Relatórios PDF', 'Gere relatórios para impressão'],
   };
   const [t, s] = titles[id] || ['', ''];
@@ -328,6 +619,8 @@ function showSection(id) {
   if (id === 'geral') renderGeral();
   if (id === 'turma') renderTurma();
   if (id === 'disc')  renderDisc();
+  if (id === 'medalhas') renderMedalhas();
+  if (id === 'digital') renderDigital();
   if (id === 'relatorios') popSelects();
 }
 
@@ -401,19 +694,63 @@ function renderGeral() {
     apT.push(ap); rpT.push(rp);
   });
   APP.charts['ch-sit-turmas'] = new Chart(document.getElementById('ch-sit-turmas'),{
-    type:'bar', data:{labels:turmas,datasets:[
+    type:'bar',
+    plugins:[pluginBarPct],
+    data:{labels:turmas,datasets:[
       {label:'Aprovado',data:apT,backgroundColor:'#057a55'},
       {label:'Reprovado',data:rpT,backgroundColor:'#c81e1e'},
     ]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{font:{size:12},boxWidth:12}}},scales:{x:{stacked:true},y:{stacked:true,ticks:{stepSize:1}}}}
+    options: optsBarEmpilhado()
   });
 
   destroyChart('ch-media-disc');
   const mD = discs.map(d=>{const ms=APP.notas.filter(r=>r.DISCIPLINA===d).map(r=>calcMedia(r)).filter(m=>m!==null);return ms.length?+(ms.reduce((a,b)=>a+b,0)/ms.length).toFixed(2):0;});
   APP.charts['ch-media-disc'] = new Chart(document.getElementById('ch-media-disc'),{
-    type:'bar', data:{labels:discs,datasets:[{label:'Média',data:mD,backgroundColor:mD.map(m=>m>=CFG.mediaAprov?'#057a55':'#c81e1e')}]},
-    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{min:0,max:10}}}
+    type:'bar',
+    plugins:[pluginBarValor],
+    data:{labels:discs,datasets:[{label:'Média',data:mD,backgroundColor:mD.map(m=>m>=CFG.mediaAprov?'#057a55':'#c81e1e')}]},
+    options: optsBarHoriz()
   });
+
+  // Gráfico Material Digital no painel geral
+  if (APP.digital.length) {
+    const cardDigGeral = document.getElementById('card-digital-geral');
+    if (cardDigGeral) cardDigGeral.style.display = '';
+    const discsDig = unique(APP.digital.map(r => r.DISCIPLINA));
+    const pctsPorDisc = discsDig.map(d => {
+      const regs = APP.digital.filter(r => r.DISCIPLINA === d);
+      const c = calcDigital(regs);
+      return c ? c.pct : 0;
+    });
+    destroyChart('ch-digital-geral');
+    APP.charts['ch-digital-geral'] = new Chart(document.getElementById('ch-digital-geral'), {
+      type: 'bar',
+      data: {
+        labels: discsDig,
+        datasets: [{
+          label: '% Cumprimento Digital',
+          data: pctsPorDisc,
+          backgroundColor: pctsPorDisc.map(p => p >= 80 ? '#6c2bd9' : p >= 50 ? '#a855f7' : '#c084fc'),
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => `${ctx.raw.toFixed(1)}%` } }
+        },
+        scales: {
+          x: { min: 0, max: 100, ticks: { callback: v => v + '%' } }
+        }
+      }
+    });
+  } else {
+    const cardDigGeral = document.getElementById('card-digital-geral');
+    if (cardDigGeral) cardDigGeral.style.display = 'none';
+  }
 
   document.getElementById('tb-resumo').innerHTML = turmas.map(t => {
     const al = unique(APP.notas.filter(r=>r.TURMA===t).map(r=>r.ESTUDANTE));
@@ -439,12 +776,50 @@ function renderGeral() {
 // ── VISÃO TURMA ────────────────────────────────────────────
 function renderTurma() {
   const t = APP.turmaSel;
-  const regs = APP.notas.filter(r => r.TURMA === t);
-  if (!regs.length) return;
-  const discs  = unique(regs.map(r=>r.DISCIPLINA));
-  const alunos = unique(regs.map(r=>r.ESTUDANTE));
+  const todasRegs = APP.notas.filter(r => r.TURMA === t);
+  if (!todasRegs.length) return;
+  const todasDiscs = unique(todasRegs.map(r=>r.DISCIPLINA));
+
   document.getElementById('titulo-alunos').textContent = `Alunos — Turma ${t}`;
   document.getElementById('tb-title').textContent = `Turma ${t}`;
+
+  // Popular select de disciplina
+  const selD = document.getElementById('filtro-disc-turma');
+  if (selD) {
+    const prev = selD.value;
+    selD.innerHTML = '<option value="">Todas as disciplinas</option>' +
+      todasDiscs.map(d=>`<option value="${d}"${d===prev?' selected':''}>${d}</option>`).join('');
+  }
+
+  renderTurmaComFiltro();
+  renderDigitalTurma(t);
+}
+
+// Renderiza cards de material digital na visão de turma
+function renderDigitalTurma(turma) {
+  const secDigTurma = document.getElementById('digital-turma-section');
+  const bodyDigTurma = document.getElementById('digital-turma-body');
+  const regsDigTurma = APP.digital.filter(r => r.TURMA === turma);
+  if (!regsDigTurma.length) {
+    if (secDigTurma) secDigTurma.style.display = 'none';
+    return;
+  }
+  if (secDigTurma) secDigTurma.style.display = '';
+  const discs = unique(regsDigTurma.map(r => r.DISCIPLINA));
+  bodyDigTurma.innerHTML = `<div class="digital-grid">${discs.map(d => {
+    const regs = regsDigTurma.filter(r => r.DISCIPLINA === d);
+    return fmtDigitalCard(turma, d, regs);
+  }).join('')}</div>`;
+}
+
+function renderTurmaComFiltro() {
+  const t    = APP.turmaSel;
+  const disc = document.getElementById('filtro-disc-turma')?.value || '';
+  const regs = APP.notas.filter(r => r.TURMA === t && (!disc || r.DISCIPLINA === disc));
+  if (!regs.length) return;
+
+  const discs  = unique(regs.map(r=>r.DISCIPLINA));
+  const alunos = unique(regs.map(r=>r.ESTUDANTE));
 
   let ap=0,rp=0,alF=0;
   alunos.forEach(a=>{
@@ -454,9 +829,10 @@ function renderTurma() {
   });
   const ms=regs.map(r=>calcMedia(r)).filter(m=>m!==null);
   const mg=ms.length?+(ms.reduce((a,b)=>a+b,0)/ms.length).toFixed(1):0;
+  const discLabel = disc || `${unique(APP.notas.filter(r=>r.TURMA===t).map(r=>r.DISCIPLINA)).length} disciplinas`;
 
   document.getElementById('mg-turma').innerHTML=`
-    <div class="mc bl"><div class="ml">Alunos</div><div class="mv c-bl">${alunos.length}</div><div class="ms">${discs.length} disciplinas</div></div>
+    <div class="mc bl"><div class="ml">Alunos</div><div class="mv c-bl">${alunos.length}</div><div class="ms">${discLabel}</div></div>
     <div class="mc gr"><div class="ml">Aprovados</div><div class="mv c-gr">${ap}</div><div class="ms">${Math.round(ap/alunos.length*100)}%</div></div>
     <div class="mc vm"><div class="ml">Reprovados</div><div class="mv c-vm">${rp}</div><div class="ms">${Math.round(rp/alunos.length*100)}%</div></div>
     <div class="mc am"><div class="ml">Alerta freq.</div><div class="mv c-am">${alF}</div></div>
@@ -465,40 +841,15 @@ function renderTurma() {
   destroyChart('ch-turma-disc');
   const mD=discs.map(d=>{const ms2=regs.filter(r=>r.DISCIPLINA===d).map(r=>calcMedia(r)).filter(m=>m!==null);return ms2.length?+(ms2.reduce((a,b)=>a+b,0)/ms2.length).toFixed(2):0;});
   APP.charts['ch-turma-disc']=new Chart(document.getElementById('ch-turma-disc'),{
-    type:'bar',data:{labels:discs,datasets:[{label:'Média',data:mD,backgroundColor:mD.map(m=>m>=CFG.mediaAprov?'#057a55':'#c81e1e')}]},
-    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{min:0,max:10}}}
+    type:'bar', plugins:[pluginBarValor],
+    data:{labels:discs,datasets:[{label:'Média',data:mD,backgroundColor:mD.map(m=>m>=CFG.mediaAprov?'#057a55':'#c81e1e')}]},
+    options: optsBarHoriz()
   });
+
   destroyChart('ch-turma-sit');
   const total = ap + rp || 1;
-  const pctLabel = {
-    id: 'pctLabel',
-    afterDraw(chart) {
-      const ctx2 = chart.ctx;
-      chart.data.datasets.forEach((ds, di) => {
-        const meta = chart.getDatasetMeta(di);
-        meta.data.forEach((arc, i) => {
-          const val = ds.data[i];
-          if (!val) return;
-          const pct = Math.round(val / total * 100);
-          if (pct < 5) return;
-          const mid = arc.startAngle + (arc.endAngle - arc.startAngle) / 2;
-          const r = (arc.innerRadius + arc.outerRadius) / 2;
-          const x = arc.x + r * Math.cos(mid);
-          const y = arc.y + r * Math.sin(mid);
-          ctx2.save();
-          ctx2.fillStyle = '#fff';
-          ctx2.font = 'bold 13px sans-serif';
-          ctx2.textAlign = 'center';
-          ctx2.textBaseline = 'middle';
-          ctx2.fillText(pct + '%', x, y);
-          ctx2.restore();
-        });
-      });
-    }
-  };
   APP.charts['ch-turma-sit'] = new Chart(document.getElementById('ch-turma-sit'), {
-    type: 'doughnut',
-    plugins: [pctLabel],
+    type: 'doughnut', plugins: [makePctLabelPlugin(total)],
     data: { labels: ['Aprovado', 'Reprovado'], datasets: [{ data: [ap, rp], backgroundColor: ['#057a55', '#c81e1e'], borderWidth: 2 }] },
     options: {
       responsive: true, maintainAspectRatio: false, cutout: '52%',
@@ -512,16 +863,21 @@ function renderTurma() {
 }
 
 function renderAlunos() {
-  const t   = APP.turmaSel;
-  const sit = document.getElementById('filtro-sit').value;
-  const bsc = document.getElementById('busca').value.toLowerCase();
-  const regs = APP.notas.filter(r => r.TURMA === t && (!bsc || r.ESTUDANTE.toLowerCase().includes(bsc)));
+  const t    = APP.turmaSel;
+  const disc = document.getElementById('filtro-disc-turma')?.value || '';
+  const sit  = document.getElementById('filtro-sit').value;
+  const bsc  = document.getElementById('busca').value.toLowerCase();
+  const regs = APP.notas.filter(r =>
+    r.TURMA === t &&
+    (!disc || r.DISCIPLINA === disc) &&
+    (!bsc  || r.ESTUDANTE.toLowerCase().includes(bsc))
+  );
   const linhas = [];
   regs.forEach(r => {
     const d = dadosReg(r);
-    if (sit === 'Aprovado' && d.sit !== 'Aprovado') return;
-    if (sit === 'Reprovado' && d.sit !== 'Reprovado') return;
-    if (sit === 'Alerta freq.' && !d.alFreq) return;
+    if (sit === 'Aprovado'    && d.sit !== 'Aprovado')   return;
+    if (sit === 'Reprovado'   && d.sit !== 'Reprovado')  return;
+    if (sit === 'Alerta freq.' && !d.alFreq)             return;
     linhas.push(`<tr class="click" onclick="abrirModal('${r.ESTUDANTE.replace(/'/g,"\\'")}','${t}')">
       <td style="font-size:12px;"><strong>${r.ESTUDANTE}</strong></td>
       <td style="font-size:12px;color:var(--cinza);">${r.DISCIPLINA}</td>
@@ -539,11 +895,30 @@ function renderAlunos() {
 // ── VISÃO DISCIPLINA ───────────────────────────────────────
 function renderDisc() {
   const disc = APP.discSel;
-  const regs = APP.notas.filter(r => r.DISCIPLINA === disc);
-  if (!regs.length) return;
-  const turmas = unique(regs.map(r=>r.TURMA));
+  const todasRegs = APP.notas.filter(r => r.DISCIPLINA === disc);
+  if (!todasRegs.length) return;
+  const turmas = unique(todasRegs.map(r=>r.TURMA));
   document.getElementById('titulo-disc').textContent = disc;
   document.getElementById('tb-title').textContent = disc;
+
+  // Popular select de turmas
+  const sel = document.getElementById('filtro-turma-disc');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">Todas as turmas</option>' +
+    turmas.map(t=>`<option value="${t}"${t===prev?' selected':''}>${t}</option>`).join('');
+
+  renderDiscComFiltro();
+}
+
+function renderDiscComFiltro() {
+  const disc = APP.discSel;
+  const ft   = document.getElementById('filtro-turma-disc').value;
+  const regs = APP.notas.filter(r => r.DISCIPLINA === disc && (!ft || r.TURMA === ft));
+  if (!regs.length) return;
+
+  const turmas = unique(APP.notas.filter(r=>r.DISCIPLINA===disc).map(r=>r.TURMA));
+  const label  = document.getElementById('iv-turma-label');
+  if (label) label.textContent = ft ? `— ${ft}` : '';
 
   let ap=0,rp=0,alF=0;
   const ms=[];
@@ -556,38 +931,76 @@ function renderDisc() {
   const mg=ms.length?+(ms.reduce((a,b)=>a+b,0)/ms.length).toFixed(1):0;
 
   document.getElementById('mg-disc').innerHTML=`
-    <div class="mc bl"><div class="ml">Registros</div><div class="mv c-bl">${regs.length}</div><div class="ms">${turmas.length} turma(s)</div></div>
-    <div class="mc gr"><div class="ml">Aprovados</div><div class="mv c-gr">${ap}</div></div>
-    <div class="mc vm"><div class="ml">Reprovados</div><div class="mv c-vm">${rp}</div></div>
+    <div class="mc bl"><div class="ml">Registros</div><div class="mv c-bl">${regs.length}</div><div class="ms">${ft||turmas.length+' turma(s)'}</div></div>
+    <div class="mc gr"><div class="ml">Aprovados</div><div class="mv c-gr">${ap}</div><div class="ms">${ms.length?Math.round(ap/regs.length*100)+'%':''}</div></div>
+    <div class="mc vm"><div class="ml">Reprovados</div><div class="mv c-vm">${rp}</div><div class="ms">${ms.length?Math.round(rp/regs.length*100)+'%':''}</div></div>
     <div class="mc am"><div class="ml">Alerta freq.</div><div class="mv c-am">${alF}</div></div>
     <div class="mc rx"><div class="ml">Média geral</div><div class="mv c-rx">${mg.toFixed(1).replace('.',',')}</div></div>`;
 
+  // Gráfico evolução — filtra turmas pelo filtro ativo
   destroyChart('ch-disc-evol');
   const cores=['#1a56db','#057a55','#b45309','#c81e1e','#6c2bd9'];
+  const turmasGraf = ft ? [ft] : turmas;
   APP.charts['ch-disc-evol']=new Chart(document.getElementById('ch-disc-evol'),{
-    type:'line',
+    type:'line', plugins:[pluginLinePct],
     data:{labels:['1º Bim','2º Bim','3º Bim','4º Bim'],
-      datasets:turmas.map((t,i)=>{
+      datasets:turmasGraf.map((t,i)=>{
         const tr=regs.filter(r=>r.TURMA===t);
-        return{label:t,borderColor:cores[i%cores.length],backgroundColor:'transparent',pointBackgroundColor:cores[i%cores.length],tension:.3,spanGaps:true,
-          data:['b1','b2','b3','b4'].map(b=>{const vs=tr.map(r=>r[b]).filter(v=>v!==null);return vs.length?+(vs.reduce((a,c)=>a+c,0)/vs.length).toFixed(2):null;})};
+        return{label:t,borderColor:cores[i%cores.length],backgroundColor:'transparent',
+          pointBackgroundColor:cores[i%cores.length],tension:.3,spanGaps:true,
+          data:['b1','b2','b3','b4'].map(b=>{
+            const vs=tr.map(r=>r[b]).filter(v=>v!==null);
+            return vs.length?+(vs.reduce((a,c)=>a+c,0)/vs.length).toFixed(2):null;
+          })};
       })
     },
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{font:{size:12},boxWidth:12}}},scales:{y:{min:0,max:10}}}
+    options: optsLinha()
   });
 
+  // Gráfico distribuição com percentual
   destroyChart('ch-disc-dist');
   const faixas=['0–2','2–4','4–5','5–7','7–10'];
   const cnt=[0,0,0,0,0];
   ms.forEach(m=>{if(m<2)cnt[0]++;else if(m<4)cnt[1]++;else if(m<5)cnt[2]++;else if(m<7)cnt[3]++;else cnt[4]++;});
+  const totalCnt = cnt.reduce((a,b)=>a+b,0)||1;
+
+  // Plugin especial para distribuição: mostra valor E percentual
+  const pluginDistPct = {
+    id:'distPct',
+    afterDatasetsDraw(chart){
+      const {ctx,data}=chart;
+      data.datasets[0].data.forEach((val,i)=>{
+        if(!val) return;
+        const meta=chart.getDatasetMeta(0);
+        const bar=meta.data[i];
+        const pct=Math.round(val/totalCnt*100);
+        ctx.save();
+        // Valor no topo da barra
+        ctx.fillStyle='#374151';
+        ctx.font='bold 11px sans-serif';
+        ctx.textAlign='center';
+        ctx.textBaseline='bottom';
+        ctx.fillText(val, bar.x, bar.y-2);
+        // Percentual dentro da barra
+        if(bar.height>20){
+          ctx.fillStyle='#fff';
+          ctx.textBaseline='middle';
+          ctx.fillText(pct+'%', bar.x, bar.y+bar.height/2);
+        }
+        ctx.restore();
+      });
+    }
+  };
+
   APP.charts['ch-disc-dist']=new Chart(document.getElementById('ch-disc-dist'),{
-    type:'bar',data:{labels:faixas,datasets:[{label:'Alunos',data:cnt,backgroundColor:['#c81e1e','#c81e1e','#b45309','#057a55','#057a55']}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{stepSize:1}}}}
+    type:'bar', plugins:[pluginDistPct],
+    data:{labels:faixas,datasets:[{label:'Alunos',data:cnt,
+      backgroundColor:['#c81e1e','#c81e1e','#b45309','#057a55','#057a55']}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{ticks:{stepSize:1}}},layout:{padding:{top:18}}}
   });
 
   renderIntervencoes(regs);
-  const sel=document.getElementById('filtro-turma-disc');
-  sel.innerHTML='<option value="">Todas as turmas</option>'+turmas.map(t=>`<option value="${t}">${t}</option>`).join('');
   renderListaDisc();
 }
 
@@ -620,13 +1033,7 @@ function renderIntervencoes(regs) {
 }
 
 function onFiltroTurmaDisc() {
-  const ft = document.getElementById('filtro-turma-disc').value;
-  const label = document.getElementById('iv-turma-label');
-  if (label) label.textContent = ft ? `— ${ft}` : '';
-  const disc = APP.discSel;
-  const regs = APP.notas.filter(r => r.DISCIPLINA === disc && (!ft || r.TURMA === ft));
-  renderIntervencoes(regs);
-  renderListaDisc();
+  renderDiscComFiltro();
 }
 
 function renderListaDisc() {
@@ -649,6 +1056,96 @@ function renderListaDisc() {
       <td>${alerta}</td>
     </tr>`;
   }).join('')||'<tr><td colspan="10" style="text-align:center;color:var(--cinza);padding:20px;">Nenhum registro</td></tr>';
+}
+
+// ── SEÇÃO MATERIAL DIGITAL ─────────────────────────────────
+function renderDigital() {
+  if (!APP.digital.length) {
+    document.getElementById('mg-digital').innerHTML = `
+      <div class="mc" style="grid-column:1/-1;border-left:4px solid var(--roxo);">
+        <div class="ml">Sem dados de material digital</div>
+        <div class="mv c-rx" style="font-size:14px;font-weight:500;">Importe uma planilha com a aba <strong>DIGITAL</strong> para visualizar o progresso</div>
+      </div>`;
+    document.getElementById('digital-cards-body').innerHTML = '';
+    const cvs = document.getElementById('ch-digital-disc');
+    if (cvs) cvs.parentElement.parentElement.style.display = 'none';
+    return;
+  }
+
+  const ft = document.getElementById('filtro-digital-turma')?.value || '';
+  const fd = document.getElementById('filtro-digital-disc')?.value || '';
+  const regs = APP.digital.filter(r => (!ft || r.TURMA === ft) && (!fd || r.DISCIPLINA === fd));
+
+  // Métricas globais
+  const calcTotal = calcDigital(regs);
+  const turmasDig = unique(regs.map(r => r.TURMA));
+  const discsDig  = unique(regs.map(r => r.DISCIPLINA));
+  const pctGlobal = calcTotal ? calcTotal.pct : 0;
+  const pctCls = pctGlobal >= 80 ? 'c-gr' : pctGlobal >= 50 ? 'c-am' : 'c-vm';
+
+  document.getElementById('mg-digital').innerHTML = `
+    <div class="mc" style="border-left:4px solid var(--roxo);"><div class="ml">Cumprimento geral</div><div class="mv ${pctCls}">${calcTotal ? calcTotal.pct.toFixed(1) + '%' : '—'}</div><div class="ms">${calcTotal ? calcTotal.concluido + ' de ' + calcTotal.previsto + ' aulas' : ''}</div></div>
+    <div class="mc" style="border-left:4px solid var(--roxo);"><div class="ml">Turmas</div><div class="mv c-rx">${turmasDig.length}</div><div class="ms">com material digital</div></div>
+    <div class="mc" style="border-left:4px solid var(--roxo);"><div class="ml">Disciplinas</div><div class="mv c-rx">${discsDig.length}</div><div class="ms">no filtro atual</div></div>
+    <div class="mc" style="border-left:4px solid var(--roxo);"><div class="ml">Registros</div><div class="mv c-rx">${regs.length}</div><div class="ms">turma × disciplina</div></div>`;
+
+  // Gráfico de barras por disciplina
+  const cvs = document.getElementById('ch-digital-disc');
+  if (cvs) cvs.parentElement.parentElement.style.display = '';
+  const pctsPorDisc = discsDig.map(d => {
+    const r = regs.filter(x => x.DISCIPLINA === d);
+    const c = calcDigital(r);
+    return c ? c.pct : 0;
+  });
+  destroyChart('ch-digital-disc');
+  APP.charts['ch-digital-disc'] = new Chart(document.getElementById('ch-digital-disc'), {
+    type: 'bar',
+    data: {
+      labels: discsDig,
+      datasets: [{
+        label: '% Cumprimento',
+        data: pctsPorDisc,
+        backgroundColor: pctsPorDisc.map(p => p >= 80 ? '#6c2bd9' : p >= 50 ? '#a855f7' : '#c084fc'),
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => `${ctx.raw.toFixed(1)}%` } }
+      },
+      scales: { x: { min: 0, max: 100, ticks: { callback: v => v + '%' } } }
+    }
+  });
+
+  // Cards de progresso
+  const body = document.getElementById('digital-cards-body');
+  if (!regs.length) {
+    body.innerHTML = '<p style="color:var(--cinza);font-size:13px;">Nenhum dado encontrado para o filtro selecionado.</p>';
+    return;
+  }
+
+  // Agrupa por turma
+  const grupos = {};
+  regs.forEach(r => {
+    if (!grupos[r.TURMA]) grupos[r.TURMA] = {};
+    if (!grupos[r.TURMA][r.DISCIPLINA]) grupos[r.TURMA][r.DISCIPLINA] = [];
+    grupos[r.TURMA][r.DISCIPLINA].push(r);
+  });
+
+  let html = '';
+  Object.keys(grupos).sort().forEach(turma => {
+    html += `<div style="margin-bottom:18px;"><div style="font-size:13px;font-weight:700;color:var(--roxo-esc);margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid var(--roxo-cl);">Turma ${turma}</div>`;
+    html += `<div class="digital-grid">`;
+    Object.keys(grupos[turma]).sort().forEach(disc => {
+      html += fmtDigitalCard(turma, disc, grupos[turma][disc]);
+    });
+    html += `</div></div>`;
+  });
+  body.innerHTML = html;
 }
 
 // ── MODAL ALUNO ────────────────────────────────────────────
@@ -693,12 +1190,22 @@ function abrirModal(nome, turma) {
   });
   tabela+=`</tbody></table>`;
 
+  // Cards de material digital no modal
+  const regsDigModal = APP.digital.filter(r => r.TURMA === turma);
+  let htmlDig = '';
+  if (regsDigModal.length) {
+    const discsDig = unique(regsDigModal.map(r => r.DISCIPLINA));
+    htmlDig = `<p style="font-size:12px;font-weight:600;color:var(--cinza-esc);margin:14px 0 8px;"><i class="bi bi-laptop" style="color:var(--roxo);margin-right:4px;"></i> Material Digital — Turma ${turma}</p>
+      <div class="digital-grid">${discsDig.map(d => fmtDigitalCard(turma, d, regsDigModal.filter(r => r.DISCIPLINA === d))).join('')}</div>`;
+  }
+
   const nomeEsc=nome.replace(/'/g,"\\'");
   document.getElementById('m-body').innerHTML=
     `<p style="font-size:12px;font-weight:600;color:var(--cinza-esc);margin-bottom:8px;">Evolução bimestral por disciplina</p>`+
     `<div style="position:relative;height:210px;margin-bottom:18px;"><canvas id="ch-modal-evol"></canvas></div>`+
     `<p style="font-size:12px;font-weight:600;color:var(--cinza-esc);margin:0 0 8px;">Notas e frequência</p>`+
     tabela+
+    htmlDig+
     `<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;">
       <button class="btn btn-success btn-sm" onclick="pdfAlunoNome('${nomeEsc}','${turma}')"><i class="bi bi-file-earmark-person"></i> Gerar boletim PDF</button>
     </div>`;
@@ -712,6 +1219,7 @@ function abrirModal(nome, turma) {
     if(APP.charts['ch-modal-evol']){APP.charts['ch-modal-evol'].destroy();delete APP.charts['ch-modal-evol'];}
     APP.charts['ch-modal-evol']=new Chart(ctx,{
       type:'line',
+      plugins:[pluginLinePct],
       data:{
         labels:['1º Bim','2º Bim','3º Bim','4º Bim'],
         datasets:regs.map((r,i)=>({
@@ -751,7 +1259,125 @@ function abrirModal(nome, turma) {
 }
 function fecharModal(e){if(e.target===document.getElementById('modal-aluno'))document.getElementById('modal-aluno').classList.remove('open');}
 
-// ── RELATÓRIOS PDF ─────────────────────────────────────────
+// ── MEDALHISTAS ────────────────────────────────────────────
+
+// Critérios
+const MEDALHAS = [
+  { tipo: 'ouro',   emoji: '🥇', titulo: 'Ouro',   mediaMin: 9.0, freqMin: 90, cor: '#f59e0b' },
+  { tipo: 'prata',  emoji: '🥈', titulo: 'Prata',  mediaMin: 8.0, freqMin: 90, cor: '#94a3b8' },
+  { tipo: 'bronze', emoji: '🥉', titulo: 'Bronze', mediaMin: 7.0, freqMin: 90, cor: '#b45309' },
+];
+
+// Calcula média geral do aluno em uma turma (média de todas as disciplinas)
+function mediaGeralAluno(nome, turma) {
+  const regs = APP.notas.filter(r => r.ESTUDANTE === nome && r.TURMA === turma);
+  const ms = regs.map(r => calcMedia(r)).filter(m => m !== null);
+  if (!ms.length) return null;
+  return +(ms.reduce((a, b) => a + b, 0) / ms.length).toFixed(2);
+}
+
+// Calcula frequência geral do aluno em uma turma (média de todas as disciplinas)
+function freqGeralAluno(nome, turma) {
+  const regs = APP.notas.filter(r => r.ESTUDANTE === nome && r.TURMA === turma);
+  let totalAulas = 0, totalFaltas = 0;
+  regs.forEach(r => {
+    const f = getFaltas(r.ESTUDANTE, r.TURMA, r.DISCIPLINA);
+    if (!f) return;
+    const freq = calcFreq(f);
+    if (freq) { totalAulas += freq.aulas; totalFaltas += freq.faltas; }
+  });
+  if (!totalAulas) return null;
+  return +((1 - totalFaltas / totalAulas) * 100).toFixed(1);
+}
+
+function renderMedalhas() {
+  const turmaSel = document.getElementById('filtro-turma-medalhas')?.value || '';
+  const turmas = turmaSel ? [turmaSel] : unique(APP.notas.map(r => r.TURMA));
+
+  // Construir lista de alunos com média geral e frequência geral
+  const candidatos = [];
+  turmas.forEach(t => {
+    const alunos = unique(APP.notas.filter(r => r.TURMA === t).map(r => r.ESTUDANTE));
+    alunos.forEach(a => {
+      const media = mediaGeralAluno(a, t);
+      const freq  = freqGeralAluno(a, t);
+      if (media !== null) candidatos.push({ nome: a, turma: t, media, freq: freq || 0 });
+    });
+  });
+
+  // Métricas do painel
+  const ouro   = candidatos.filter(c => c.media >= 9.0 && c.freq >= 90);
+  const prata  = candidatos.filter(c => c.media >= 8.0 && c.media < 9.0 && c.freq >= 90);
+  const bronze = candidatos.filter(c => c.media >= 7.0 && c.media < 8.0 && c.freq >= 90);
+
+  document.getElementById('mg-medalhas').innerHTML = `
+    <div class="mc" style="border-left:4px solid #f59e0b;">
+      <div class="ml">🥇 Ouro</div>
+      <div class="mv" style="color:#f59e0b;">${ouro.length}</div>
+      <div class="ms">média ≥ 9,0 · freq. ≥ 90%</div>
+    </div>
+    <div class="mc" style="border-left:4px solid #94a3b8;">
+      <div class="ml">🥈 Prata</div>
+      <div class="mv" style="color:#64748b;">${prata.length}</div>
+      <div class="ms">média ≥ 8,0 · freq. ≥ 90%</div>
+    </div>
+    <div class="mc" style="border-left:4px solid #b45309;">
+      <div class="ml">🥉 Bronze</div>
+      <div class="mv" style="color:#b45309;">${bronze.length}</div>
+      <div class="ms">média ≥ 7,0 · freq. ≥ 90%</div>
+    </div>
+    <div class="mc bl">
+      <div class="ml">Total premiados</div>
+      <div class="mv c-bl">${ouro.length + prata.length + bronze.length}</div>
+      <div class="ms">de ${candidatos.length} alunos</div>
+    </div>`;
+
+  // Ordenar por média decrescente
+  const sort = arr => [...arr].sort((a, b) => b.media - a.media || b.freq - a.freq);
+
+  function listaHTML(arr, tipo) {
+    if (!arr.length) return `<div class="medal-empty">Nenhum aluno nesta categoria</div>`;
+    return `<ul class="medal-list">${sort(arr).map((c, i) => `
+      <li class="medal-item" onclick="abrirModal('${c.nome.replace(/'/g,"\\'")}','${c.turma}')">
+        <span class="medal-rank">${i + 1}</span>
+        <span class="medal-nome">${c.nome} <span class="medal-turma">${c.turma}</span></span>
+        <span class="medal-stats">
+          <span class="medal-nota">${c.media.toFixed(1).replace('.', ',')}</span>
+          <span class="medal-freq">${c.freq.toFixed(0)}%</span>
+        </span>
+      </li>`).join('')}</ul>`;
+  }
+
+  document.getElementById('medalhas-content').innerHTML = `
+    <div class="medal-grid">
+      <div class="medal-card medal-ouro">
+        <div class="medal-header">
+          <span class="medal-emoji">🥇</span>
+          <div class="medal-info"><div class="medal-title">Medalha de Ouro</div><div class="medal-sub">Média ≥ 9,0 e frequência ≥ 90%</div></div>
+          <span class="medal-count">${ouro.length}</span>
+        </div>
+        ${listaHTML(ouro, 'ouro')}
+      </div>
+      <div class="medal-card medal-prata">
+        <div class="medal-header">
+          <span class="medal-emoji">🥈</span>
+          <div class="medal-info"><div class="medal-title">Medalha de Prata</div><div class="medal-sub">Média ≥ 8,0 e frequência ≥ 90%</div></div>
+          <span class="medal-count">${prata.length}</span>
+        </div>
+        ${listaHTML(prata, 'prata')}
+      </div>
+      <div class="medal-card medal-bronze">
+        <div class="medal-header">
+          <span class="medal-emoji">🥉</span>
+          <div class="medal-info"><div class="medal-title">Medalha de Bronze</div><div class="medal-sub">Média ≥ 7,0 e frequência ≥ 90%</div></div>
+          <span class="medal-count">${bronze.length}</span>
+        </div>
+        ${listaHTML(bronze, 'bronze')}
+      </div>
+    </div>`;
+}
+
+
 function popSelects(){
   const turmas=unique(APP.notas.map(r=>r.TURMA));
   const discs=unique(APP.notas.map(r=>r.DISCIPLINA));
@@ -912,7 +1538,7 @@ function carregarDemo(){
   ];
   const turmas=['2ªA','2ªC','3ªA'];
   const discs=['MATEMÁTICA','PROGRAMAÇÃO','ROBÓTICA'];
-  APP.notas=[];APP.faltas=[];
+  APP.notas=[];APP.faltas=[];APP.digital=[];
 
   turmas.forEach(t=>{
     const al=nomes.slice(0, t==='3ªA'?18:20);
@@ -936,11 +1562,21 @@ function carregarDemo(){
           a4,f4:a4?Math.floor(faltas*.2):null
         });
       });
+      // Dados de material digital por turma/disciplina (independente dos alunos)
+      const prev=[12,12,12,12];
+      const pctConc=[1,0.85,0.6,0];
+      APP.digital.push({
+        TURMA:t, DISCIPLINA:d,
+        prev1:prev[0], conc1:Math.round(prev[0]*pctConc[0]*(0.9+Math.random()*0.2)),
+        prev2:prev[1], conc2:Math.round(prev[1]*(pctConc[1]+Math.random()*0.15)),
+        prev3:prev[2], conc3:Math.round(prev[2]*(pctConc[2]+Math.random()*0.2)),
+        prev4:prev[3], conc4:null,
+      });
     });
   });
 
   document.getElementById('status-up').innerHTML=
-    `<span style="color:var(--verde);">✓ Dados de exemplo carregados: ${APP.notas.length} registros em ${turmas.length} turmas.</span>`;
+    `<span style="color:var(--verde);">✓ Dados de exemplo carregados: ${APP.notas.length} registros em ${turmas.length} turmas · ${APP.digital.length} registros de material digital.</span>`;
   buildNav();
   showSection('geral');
 }
@@ -973,13 +1609,25 @@ function baixarModelo(){
   wsFaltas['!cols']=[{wch:35},{wch:8},{wch:20},{wch:14},{wch:14},{wch:14},{wch:14},{wch:14},{wch:14},{wch:14},{wch:14}];
   XLSX.utils.book_append_sheet(wb, wsFaltas, 'FALTAS');
 
+  // Aba DIGITAL (nova)
+  const digitalData = [
+    ['TURMA','DISCIPLINA','PREVISTO 1º BIM','CONCLUIDO 1º BIM','PREVISTO 2º BIM','CONCLUIDO 2º BIM','PREVISTO 3º BIM','CONCLUIDO 3º BIM','PREVISTO 4º BIM','CONCLUIDO 4º BIM'],
+    ['2ªA','MATEMÁTICA',10,10,10,8,10,5,10,''],
+    ['2ªA','ROBÓTICA',8,8,8,6,8,4,8,''],
+    ['2ªB','MATEMÁTICA',10,10,10,10,10,7,10,''],
+    ['2ªB','ROBÓTICA',8,8,8,7,8,5,8,''],
+  ];
+  const wsDigital = XLSX.utils.aoa_to_sheet(digitalData);
+  wsDigital['!cols']=[{wch:8},{wch:20},{wch:16},{wch:16},{wch:16},{wch:16},{wch:16},{wch:16},{wch:16},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, wsDigital, 'DIGITAL');
+
   XLSX.writeFile(wb, 'modelo_conselho_classe.xlsx');
 }
 
 // ── LIMPAR ─────────────────────────────────────────────────
 function limpar(){
   if(!confirm('Limpar todos os dados?')) return;
-  APP.notas=[];APP.faltas=[];APP.turmaSel=null;APP.discSel=null;
+  APP.notas=[];APP.faltas=[];APP.digital=[];APP.turmaSel=null;APP.discSel=null;
   Object.values(APP.charts).forEach(c=>c.destroy());APP.charts={};
   document.getElementById('nav-turmas').innerHTML='';
   document.getElementById('nav-discs').innerHTML='';
@@ -988,7 +1636,45 @@ function limpar(){
   showSection('upload');
 }
 
+// ── SIDEBAR MOBILE ──────────────────────────────────────────
+function abrirSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sb-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function fecharSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sb-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+// Fechar sidebar ao clicar em um link (mobile)
+document.addEventListener('click', e => {
+  if (window.innerWidth <= 768 && e.target.closest('#sidebar .nav-link')) {
+    fecharSidebar();
+  }
+});
+
+// ── LGPD ────────────────────────────────────────────────────
+function aceitarCookies() {
+  localStorage.setItem('lgpd_consent', 'accepted');
+  document.getElementById('lgpd-banner').classList.add('hidden');
+}
+function recusarCookies() {
+  localStorage.setItem('lgpd_consent', 'essential');
+  document.getElementById('lgpd-banner').classList.add('hidden');
+}
+function abrirPolitica() {
+  document.getElementById('lgpd-modal').classList.add('open');
+}
+function fecharPolitica(e) {
+  if (e.target === document.getElementById('lgpd-modal'))
+    document.getElementById('lgpd-modal').classList.remove('open');
+}
+
 // ── INIT ───────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded',()=>{
-  document.getElementById('loader').style.display='none';
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('loader').style.display = 'none';
+  // Verificar consentimento LGPD
+  const consent = localStorage.getItem('lgpd_consent');
+  if (consent) document.getElementById('lgpd-banner').classList.add('hidden');
 });
