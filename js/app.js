@@ -13,7 +13,7 @@ const APP = { notas: [], faltas: [], digital: [], charts: {}, turmaSel: null, di
 const CFG = {
   mediaAprov: 5.0,
   freqMin: 75,
-  escola: 'E.E. Célia Vasques',
+  escola: 'E.E. Professora Célia Vasques Ferrari Duch',
   etapa: 'Ensino Médio',
 };
 
@@ -37,6 +37,21 @@ function destroyChart(id) {
   if (APP.charts[id]) { APP.charts[id].destroy(); delete APP.charts[id]; }
 }
 
+// Distribui valores inteiros de forma que a soma seja SEMPRE 100%
+// Usa o método do maior resto (Hamilton/Largest Remainder Method)
+function distribuirPct(valores) {
+  const total = valores.reduce((a, b) => a + b, 0);
+  if (!total) return valores.map(() => 0);
+  const exatos = valores.map(v => v / total * 100);
+  const floors = exatos.map(v => Math.floor(v));
+  let resto = 100 - floors.reduce((a, b) => a + b, 0);
+  const indices = exatos
+    .map((v, i) => ({ i, rem: v - floors[i] }))
+    .sort((a, b) => b.rem - a.rem);
+  for (let k = 0; k < resto; k++) floors[indices[k].i]++;
+  return floors;
+}
+
 // Chave de cruzamento entre abas
 function chave(estudante, turma, disc) {
   return `${estudante}|${turma}|${disc}`;
@@ -51,16 +66,20 @@ const pluginBarPct = {
     const { ctx, data } = chart;
     if (chart.config.type !== 'bar') return;
     const isHoriz = chart.config.options?.indexAxis === 'y';
+    // Pre-computar percentagens por coluna usando distribuirPct
+    const numCols = data.labels ? data.labels.length : 0;
+    const colPcts = [];
+    for (let i = 0; i < numCols; i++) {
+      const vals = data.datasets.map(ds => ds.data[i] || 0);
+      colPcts.push(distribuirPct(vals));
+    }
     data.datasets.forEach((ds, di) => {
       const meta = chart.getDatasetMeta(di);
       if (meta.hidden) return;
       meta.data.forEach((bar, i) => {
         const val = ds.data[i];
         if (val === null || val === undefined || val === 0) return;
-        // Total da barra naquele índice (soma de todos datasets)
-        const total = data.datasets.reduce((s, d2) => s + (d2.data[i] || 0), 0);
-        if (!total) return;
-        const pct = Math.round(val / total * 100);
+        const pct = colPcts[i][di];
         if (pct < 8) return; // não mostrar em barras muito pequenas
         const { x, y, width, height } = bar;
         ctx.save();
@@ -69,11 +88,9 @@ const pluginBarPct = {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         if (isHoriz) {
-          // barra horizontal: texto dentro da barra à direita
           const cx = x - (x - bar.base) / 2;
           if (Math.abs(x - bar.base) > 34) ctx.fillText(pct + '%', cx, y);
         } else {
-          // barra vertical: texto dentro da barra no centro
           if (height > 18) ctx.fillText(pct + '%', x, y + height / 2);
         }
         ctx.restore();
@@ -152,10 +169,11 @@ function makePctLabelPlugin(getTotal) {
       const ctx2 = chart.ctx;
       chart.data.datasets.forEach((ds, di) => {
         const meta = chart.getDatasetMeta(di);
+        const pcts = distribuirPct(ds.data.map(v => v || 0));
         meta.data.forEach((arc, i) => {
           const val = ds.data[i];
           if (!val) return;
-          const pct = Math.round(val / total * 100);
+          const pct = pcts[i];
           if (pct < 5) return;
           const mid = arc.startAngle + (arc.endAngle - arc.startAngle) / 2;
           const r = (arc.innerRadius + arc.outerRadius) / 2;
@@ -589,6 +607,21 @@ function buildNav() {
     `<a class="nav-link" data-t="${t}" onclick="selTurma('${t}')"><i class="bi bi-people"></i> ${t}</a>`).join('');
   document.getElementById('nav-discs').innerHTML = discs.map(d =>
     `<a class="nav-link" data-d="${encodeURIComponent(d)}" onclick="selDisc('${encodeURIComponent(d)}')"><i class="bi bi-journal-bookmark"></i> ${d}</a>`).join('');
+
+  // Atualiza contadores dos accordions
+  const countT = document.getElementById('acc-turmas-count');
+  const countD = document.getElementById('acc-discs-count');
+  if (countT) { countT.textContent = turmas.length; countT.classList.add('visible'); }
+  if (countD) { countD.textContent = discs.length; countD.classList.add('visible'); }
+
+  // Abre os accordions automaticamente na primeira carga
+  if (turmas.length) openAcc('acc-turmas');
+  if (discs.length) openAcc('acc-discs');
+
+  // Mostrar botão PPTX na topbar
+  const btnPptxTopbar = document.getElementById('btn-pptx-topbar');
+  if (btnPptxTopbar) btnPptxTopbar.style.display = '';
+
   // Popular filtro de turma na seção medalhistas
   const sel = document.getElementById('filtro-turma-medalhas');
   if (sel) sel.innerHTML = '<option value="">Todas as turmas</option>' + turmas.map(t => `<option value="${t}">${t}</option>`).join('');
@@ -597,6 +630,34 @@ function buildNav() {
   if (selDT) selDT.innerHTML = '<option value="">Todas as turmas</option>' + turmas.map(t => `<option value="${t}">${t}</option>`).join('');
   const selDD = document.getElementById('filtro-digital-disc');
   if (selDD) selDD.innerHTML = '<option value="">Todas as disciplinas</option>' + discs.map(d => `<option value="${d}">${d}</option>`).join('');
+  // Popular filtros da seção Radar Preditivo
+  const selRT = document.getElementById('radar-sel-turma');
+  if (selRT) selRT.innerHTML = '<option value="">Todas as turmas</option>' + turmas.map(t => `<option value="${t}">${t}</option>`).join('');
+  const selRD = document.getElementById('radar-sel-disc');
+  if (selRD) selRD.innerHTML = '<option value="">Todas as disciplinas</option>' + discs.map(d => `<option value="${d}">${d}</option>`).join('');
+}
+
+function openAcc(id) {
+  const acc = document.getElementById(id);
+  if (!acc) return;
+  const toggle = acc.querySelector('.sb-acc-toggle');
+  const body = acc.querySelector('.sb-acc-body');
+  if (!toggle || !body) return;
+  toggle.classList.add('open');
+  toggle.setAttribute('aria-expanded', 'true');
+  body.classList.add('open');
+}
+
+function toggleAcc(id) {
+  const acc = document.getElementById(id);
+  if (!acc) return;
+  const toggle = acc.querySelector('.sb-acc-toggle');
+  const body = acc.querySelector('.sb-acc-body');
+  if (!toggle || !body) return;
+  const isOpen = body.classList.contains('open');
+  toggle.classList.toggle('open', !isOpen);
+  toggle.setAttribute('aria-expanded', String(!isOpen));
+  body.classList.toggle('open', !isOpen);
 }
 
 function showSection(id) {
@@ -611,7 +672,9 @@ function showSection(id) {
     disc:      [APP.discSel || '', 'Análise e intervenções pedagógicas'],
     medalhas:  ['🏆 Medalhistas', 'Ranking por desempenho e frequência'],
     digital:   ['💻 Material Digital', 'Progresso do conteúdo digital por turma e disciplina'],
+    radar:     ['🎯 Radar Preditivo', 'Centro de Inteligência Pedagógica — discrepâncias para investigação'],
     relatorios:['Relatórios PDF', 'Gere relatórios para impressão'],
+    pptx:     ['Apresentação PPTX', 'Gerar relatório em PowerPoint para reuniões'],
   };
   const [t, s] = titles[id] || ['', ''];
   document.getElementById('tb-title').textContent = t;
@@ -621,7 +684,9 @@ function showSection(id) {
   if (id === 'disc')  renderDisc();
   if (id === 'medalhas') renderMedalhas();
   if (id === 'digital') renderDigital();
+  if (id === 'radar') renderRadar();
   if (id === 'relatorios') popSelects();
+  if (id === 'pptx') popSelectsPPTX();
 }
 
 function selTurma(t) {
@@ -675,10 +740,11 @@ function renderGeral() {
   const medias = APP.notas.map(r => calcMedia(r)).filter(m => m !== null);
   const mg = medias.length ? +(medias.reduce((a,b)=>a+b,0)/medias.length).toFixed(1) : 0;
 
+  const [pctAprovG, pctReprovG] = distribuirPct([aprov, reprov]);
   document.getElementById('mg-geral').innerHTML = `
     <div class="mc bl"><div class="ml">Total de alunos</div><div class="mv c-bl">${alunos.length}</div><div class="ms">${turmas.length} turmas · ${discs.length} disciplinas</div></div>
-    <div class="mc gr"><div class="ml">Aprovados</div><div class="mv c-gr">${aprov}</div><div class="ms">${Math.round(aprov/alunos.length*100)}% do total</div></div>
-    <div class="mc vm"><div class="ml">Reprovados</div><div class="mv c-vm">${reprov}</div><div class="ms">${Math.round(reprov/alunos.length*100)}% do total</div></div>
+    <div class="mc gr"><div class="ml">Aprovados</div><div class="mv c-gr">${aprov}</div><div class="ms">${pctAprovG}% do total</div></div>
+    <div class="mc vm"><div class="ml">Reprovados</div><div class="mv c-vm">${reprov}</div><div class="ms">${pctReprovG}% do total</div></div>
     <div class="mc am"><div class="ml">Alerta de frequência</div><div class="mv c-am">${alFreqs}</div><div class="ms">freq. &lt; 75%</div></div>
     <div class="mc rx"><div class="ml">Média geral</div><div class="mv c-rx">${mg.toFixed(1)}</div></div>`;
 
@@ -831,10 +897,11 @@ function renderTurmaComFiltro() {
   const mg=ms.length?+(ms.reduce((a,b)=>a+b,0)/ms.length).toFixed(1):0;
   const discLabel = disc || `${unique(APP.notas.filter(r=>r.TURMA===t).map(r=>r.DISCIPLINA)).length} disciplinas`;
 
+  const [pctApT, pctRpT] = distribuirPct([ap, rp]);
   document.getElementById('mg-turma').innerHTML=`
     <div class="mc bl"><div class="ml">Alunos</div><div class="mv c-bl">${alunos.length}</div><div class="ms">${discLabel}</div></div>
-    <div class="mc gr"><div class="ml">Aprovados</div><div class="mv c-gr">${ap}</div><div class="ms">${Math.round(ap/alunos.length*100)}%</div></div>
-    <div class="mc vm"><div class="ml">Reprovados</div><div class="mv c-vm">${rp}</div><div class="ms">${Math.round(rp/alunos.length*100)}%</div></div>
+    <div class="mc gr"><div class="ml">Aprovados</div><div class="mv c-gr">${ap}</div><div class="ms">${pctApT}%</div></div>
+    <div class="mc vm"><div class="ml">Reprovados</div><div class="mv c-vm">${rp}</div><div class="ms">${pctRpT}%</div></div>
     <div class="mc am"><div class="ml">Alerta freq.</div><div class="mv c-am">${alF}</div></div>
     <div class="mc rx"><div class="ml">Média geral</div><div class="mv c-rx">${mg.toFixed(1).replace('.',',')}</div></div>`;
 
@@ -855,7 +922,11 @@ function renderTurmaComFiltro() {
       responsive: true, maintainAspectRatio: false, cutout: '52%',
       plugins: {
         legend: { position: 'bottom', labels: { font: { size: 12 }, boxWidth: 12 } },
-        tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw} (${Math.round(ctx.raw / total * 100)}%)` } }
+        tooltip: { callbacks: { label: ctx => {
+          const vals = ctx.chart.data.datasets[ctx.datasetIndex].data;
+          const pcts = distribuirPct(vals.map(v => v || 0));
+          return `${ctx.label}: ${ctx.raw} (${pcts[ctx.dataIndex]}%)`;
+        }}}
       }
     }
   });
@@ -930,10 +1001,11 @@ function renderDiscComFiltro() {
   });
   const mg=ms.length?+(ms.reduce((a,b)=>a+b,0)/ms.length).toFixed(1):0;
 
+  const [pctApD, pctRpD] = distribuirPct([ap, rp]);
   document.getElementById('mg-disc').innerHTML=`
     <div class="mc bl"><div class="ml">Registros</div><div class="mv c-bl">${regs.length}</div><div class="ms">${ft||turmas.length+' turma(s)'}</div></div>
-    <div class="mc gr"><div class="ml">Aprovados</div><div class="mv c-gr">${ap}</div><div class="ms">${ms.length?Math.round(ap/regs.length*100)+'%':''}</div></div>
-    <div class="mc vm"><div class="ml">Reprovados</div><div class="mv c-vm">${rp}</div><div class="ms">${ms.length?Math.round(rp/regs.length*100)+'%':''}</div></div>
+    <div class="mc gr"><div class="ml">Aprovados</div><div class="mv c-gr">${ap}</div><div class="ms">${ms.length?pctApD+'%':''}</div></div>
+    <div class="mc vm"><div class="ml">Reprovados</div><div class="mv c-vm">${rp}</div><div class="ms">${ms.length?pctRpD+'%':''}</div></div>
     <div class="mc am"><div class="ml">Alerta freq.</div><div class="mv c-am">${alF}</div></div>
     <div class="mc rx"><div class="ml">Média geral</div><div class="mv c-rx">${mg.toFixed(1).replace('.',',')}</div></div>`;
 
@@ -965,6 +1037,7 @@ function renderDiscComFiltro() {
   const totalCnt = cnt.reduce((a,b)=>a+b,0)||1;
 
   // Plugin especial para distribuição: mostra valor E percentual
+  const pctsDist = distribuirPct(cnt);
   const pluginDistPct = {
     id:'distPct',
     afterDatasetsDraw(chart){
@@ -973,7 +1046,7 @@ function renderDiscComFiltro() {
         if(!val) return;
         const meta=chart.getDatasetMeta(0);
         const bar=meta.data[i];
-        const pct=Math.round(val/totalCnt*100);
+        const pct=pctsDist[i];
         ctx.save();
         // Valor no topo da barra
         ctx.fillStyle='#374151';
@@ -1525,6 +1598,980 @@ function pdfDisc(){
   w.document.close();
 }
 
+
+// ══════════════════════════════════════════════════════════════
+//  MÓDULO PPTX — Geração de apresentação PowerPoint
+//  Usa PptxGenJS (carregado via CDN)
+//  Cores alinhadas à identidade visual do sistema
+// ══════════════════════════════════════════════════════════════
+
+// Paleta PPTX — espelha as variáveis CSS do sistema
+const PPTX_CORES = {
+  roxo:     '6C2BD9',
+  roxoEsc:  '4A1D96',
+  roxoCl:   'F3E8FF',
+  azul:     '1A56DB',
+  azulEsc:  '1E3A8A',
+  azulCl:   'EFF6FF',
+  verde:    '057A55',
+  verdeCl:  'DEF7EC',
+  verdeEsc: '014737',
+  verm:     'C81E1E',
+  vermCl:   'FDE8E8',
+  amber:    'B45309',
+  amberCl:  'FEF3C7',
+  cinza:    '6B7280',
+  cinzaCl:  'F3F4F6',
+  cinzaEsc: '374151',
+  branco:   'FFFFFF',
+  escuro:   '0F172A',
+  fundo:    'F0F4F8',
+};
+
+// ── Helpers de slide ────────────────────────────────────────
+
+function pptxCapa(prs, titulo, subtitulo, detalhe) {
+  const slide = prs.addSlide();
+
+  // Fundo escuro com gradiente simulado via retângulos
+  slide.addShape(prs.ShapeType.rect, {
+    x: 0, y: 0, w: '100%', h: '100%',
+    fill: { color: PPTX_CORES.escuro },
+  });
+  slide.addShape(prs.ShapeType.rect, {
+    x: 0, y: 0, w: '100%', h: 0.08,
+    fill: { color: PPTX_CORES.roxo },
+  });
+  slide.addShape(prs.ShapeType.rect, {
+    x: 0, y: 3.42, w: '100%', h: 0.08,
+    fill: { color: PPTX_CORES.roxo },
+  });
+
+  // Ícone decorativo — círculo roxo
+  slide.addShape(prs.ShapeType.ellipse, {
+    x: 0.45, y: 0.7, w: 0.9, h: 0.9,
+    fill: { color: PPTX_CORES.roxo },
+    line: { color: PPTX_CORES.roxo },
+  });
+  slide.addText('📊', {
+    x: 0.45, y: 0.7, w: 0.9, h: 0.9,
+    align: 'center', valign: 'middle', fontSize: 22,
+  });
+
+  // Título principal
+  slide.addText(titulo, {
+    x: 0.45, y: 1.75, w: 9.1, h: 0.85,
+    fontSize: 32, bold: true, color: PPTX_CORES.branco,
+    fontFace: 'Calibri',
+  });
+
+  // Subtítulo
+  slide.addText(subtitulo, {
+    x: 0.45, y: 2.55, w: 9.1, h: 0.5,
+    fontSize: 16, color: 'A5B4FC',
+    fontFace: 'Calibri',
+  });
+
+  // Detalhe (data / info)
+  slide.addText(detalhe, {
+    x: 0.45, y: 3.12, w: 9.1, h: 0.35,
+    fontSize: 11, color: '94A3B8',
+    fontFace: 'Calibri',
+  });
+
+  return slide;
+}
+
+function pptxSlideResumoEscola(prs, dados) {
+  const slide = prs.addSlide();
+  const { turmas, totalAlunos, aprov, reprov, alFreqs, mg } = dados;
+
+  // Cabeçalho roxo
+  slide.addShape(prs.ShapeType.rect, {
+    x: 0, y: 0, w: '100%', h: 0.65,
+    fill: { color: PPTX_CORES.roxo },
+  });
+  slide.addText('Painel Consolidado — Escola', {
+    x: 0.3, y: 0, w: 9.4, h: 0.65,
+    fontSize: 16, bold: true, color: PPTX_CORES.branco,
+    fontFace: 'Calibri', valign: 'middle',
+  });
+
+  // Cards de métricas — 5 cartões em linha
+  const cards = [
+    { label: 'Total de Alunos', valor: String(totalAlunos), cor: PPTX_CORES.azulCl, corTexto: PPTX_CORES.azulEsc, borda: PPTX_CORES.azul },
+    { label: 'Aprovados',       valor: String(aprov),       cor: PPTX_CORES.verdeCl, corTexto: PPTX_CORES.verdeEsc, borda: PPTX_CORES.verde },
+    { label: 'Reprovados',      valor: String(reprov),      cor: PPTX_CORES.vermCl,  corTexto: PPTX_CORES.verm,    borda: PPTX_CORES.verm },
+    { label: 'Alerta Freq.',    valor: String(alFreqs),     cor: PPTX_CORES.amberCl, corTexto: PPTX_CORES.amber,   borda: PPTX_CORES.amber },
+    { label: 'Média Geral',     valor: String(mg.toFixed(1).replace('.', ',')), cor: PPTX_CORES.roxoCl, corTexto: PPTX_CORES.roxoEsc, borda: PPTX_CORES.roxo },
+  ];
+  const cW = 1.82, cH = 1.0, cY = 0.82, cGap = 0.065;
+  cards.forEach((c, i) => {
+    const cX = 0.25 + i * (cW + cGap);
+    slide.addShape(prs.ShapeType.rect, {
+      x: cX, y: cY, w: cW, h: cH,
+      fill: { color: c.cor },
+      line: { color: c.borda, pt: 1.5 },
+      rectRadius: 0.08,
+    });
+    slide.addText(c.valor, {
+      x: cX, y: cY + 0.12, w: cW, h: 0.52,
+      fontSize: 26, bold: true, color: c.corTexto,
+      align: 'center', fontFace: 'Calibri',
+    });
+    slide.addText(c.label, {
+      x: cX, y: cY + 0.62, w: cW, h: 0.3,
+      fontSize: 10, color: PPTX_CORES.cinzaEsc,
+      align: 'center', fontFace: 'Calibri',
+    });
+  });
+
+  // Tabela resumo por turma
+  slide.addText('Resumo por Turma', {
+    x: 0.3, y: 2.05, w: 9.4, h: 0.32,
+    fontSize: 12, bold: true, color: PPTX_CORES.cinzaEsc,
+    fontFace: 'Calibri',
+  });
+
+  const tabRows = [
+    [
+      { text: 'Turma',     options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.roxo, align: 'center' } },
+      { text: 'Alunos',    options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.roxo, align: 'center' } },
+      { text: 'Aprovados', options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.roxo, align: 'center' } },
+      { text: 'Reprovados',options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.roxo, align: 'center' } },
+      { text: 'Alerta Freq.',options:{ bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.roxo, align: 'center' } },
+      { text: 'Média',     options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.roxo, align: 'center' } },
+    ],
+    ...turmas.map((info, idx) => {
+      const bg = idx % 2 === 0 ? PPTX_CORES.branco : PPTX_CORES.cinzaCl;
+      const medCor = info.mg >= CFG.mediaAprov ? PPTX_CORES.verde : PPTX_CORES.verm;
+      return [
+        { text: info.turma,   options: { bold: true, fill: bg, align: 'center' } },
+        { text: String(info.alunos),   options: { fill: bg, align: 'center' } },
+        { text: String(info.aprov),    options: { fill: bg, align: 'center', color: PPTX_CORES.verde, bold: true } },
+        { text: String(info.reprov),   options: { fill: bg, align: 'center', color: info.reprov > 0 ? PPTX_CORES.verm : PPTX_CORES.cinzaEsc, bold: info.reprov > 0 } },
+        { text: String(info.alFreq),   options: { fill: bg, align: 'center', color: info.alFreq > 0 ? PPTX_CORES.amber : PPTX_CORES.cinzaEsc } },
+        { text: info.mg.toFixed(1).replace('.', ','), options: { fill: bg, align: 'center', color: medCor, bold: true } },
+      ];
+    }),
+  ];
+
+  slide.addTable(tabRows, {
+    x: 0.3, y: 2.38, w: 9.4, h: Math.min(1.4, 0.28 * (turmas.length + 1)),
+    fontSize: 10, fontFace: 'Calibri', color: PPTX_CORES.cinzaEsc,
+    border: { pt: 0.5, color: 'E5E7EB' },
+    rowH: 0.28,
+    colW: [1.2, 1.0, 1.4, 1.4, 1.4, 1.0],
+  });
+
+  return slide;
+}
+
+function pptxSlideResumoPorTurma(prs, turma) {
+  const slide = prs.addSlide();
+  const regs = APP.notas.filter(r => r.TURMA === turma);
+  const alunos = unique(regs.map(r => r.ESTUDANTE));
+  let ap = 0, rp = 0, alF = 0;
+  alunos.forEach(a => {
+    const ds = regs.filter(r => r.ESTUDANTE === a).map(r => dadosReg(r));
+    if (ds.some(d => d.sit === 'Reprovado')) rp++; else ap++;
+    if (ds.some(d => d.alFreq)) alF++;
+  });
+  const ms = regs.map(r => calcMedia(r)).filter(m => m !== null);
+  const mg = ms.length ? +(ms.reduce((a, b) => a + b, 0) / ms.length).toFixed(1) : 0;
+  const discs = unique(regs.map(r => r.DISCIPLINA));
+
+  // Cabeçalho azul
+  slide.addShape(prs.ShapeType.rect, {
+    x: 0, y: 0, w: '100%', h: 0.65,
+    fill: { color: PPTX_CORES.azul },
+  });
+  slide.addText(`Turma ${turma} — Resumo`, {
+    x: 0.3, y: 0, w: 9.4, h: 0.65,
+    fontSize: 16, bold: true, color: PPTX_CORES.branco,
+    fontFace: 'Calibri', valign: 'middle',
+  });
+
+  // Mini-cards
+  const cards = [
+    { label: 'Alunos',    valor: String(alunos.length), cor: PPTX_CORES.azulCl,  borda: PPTX_CORES.azul,  corTexto: PPTX_CORES.azulEsc },
+    { label: 'Aprovados', valor: String(ap),            cor: PPTX_CORES.verdeCl, borda: PPTX_CORES.verde, corTexto: PPTX_CORES.verdeEsc },
+    { label: 'Reprovados',valor: String(rp),            cor: PPTX_CORES.vermCl,  borda: PPTX_CORES.verm,  corTexto: PPTX_CORES.verm },
+    { label: 'Alerta Freq.', valor: String(alF),        cor: PPTX_CORES.amberCl, borda: PPTX_CORES.amber, corTexto: PPTX_CORES.amber },
+    { label: 'Média',     valor: mg.toFixed(1).replace('.', ','), cor: PPTX_CORES.roxoCl, borda: PPTX_CORES.roxo, corTexto: PPTX_CORES.roxoEsc },
+  ];
+  const cW = 1.82, cH = 0.9, cY = 0.82, cGap = 0.065;
+  cards.forEach((c, i) => {
+    const cX = 0.25 + i * (cW + cGap);
+    slide.addShape(prs.ShapeType.rect, { x: cX, y: cY, w: cW, h: cH, fill: { color: c.cor }, line: { color: c.borda, pt: 1.5 }, rectRadius: 0.07 });
+    slide.addText(c.valor, { x: cX, y: cY + 0.08, w: cW, h: 0.48, fontSize: 24, bold: true, color: c.corTexto, align: 'center', fontFace: 'Calibri' });
+    slide.addText(c.label, { x: cX, y: cY + 0.55, w: cW, h: 0.28, fontSize: 10, color: PPTX_CORES.cinzaEsc, align: 'center', fontFace: 'Calibri' });
+  });
+
+  // Médias por disciplina
+  slide.addText('Média por disciplina', {
+    x: 0.3, y: 1.9, w: 9.4, h: 0.3,
+    fontSize: 11, bold: true, color: PPTX_CORES.cinzaEsc, fontFace: 'Calibri',
+  });
+
+  const discRows = [
+    [
+      { text: 'Disciplina', options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul } },
+      { text: 'Média',      options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul, align: 'center' } },
+      { text: 'Situação',   options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul, align: 'center' } },
+    ],
+    ...discs.map((d, idx) => {
+      const mds = regs.filter(r => r.DISCIPLINA === d).map(r => calcMedia(r)).filter(m => m !== null);
+      const mdg = mds.length ? +(mds.reduce((a, b) => a + b, 0) / mds.length).toFixed(2) : null;
+      const bg = idx % 2 === 0 ? PPTX_CORES.branco : PPTX_CORES.cinzaCl;
+      const cor = mdg === null ? PPTX_CORES.cinza : mdg >= CFG.mediaAprov ? PPTX_CORES.verde : PPTX_CORES.verm;
+      const sit = mdg === null ? '—' : mdg >= CFG.mediaAprov ? 'Acima da média' : 'Abaixo da média';
+      return [
+        { text: d, options: { fill: bg, bold: true } },
+        { text: mdg !== null ? mdg.toFixed(1).replace('.', ',') : '—', options: { fill: bg, align: 'center', color: cor, bold: true } },
+        { text: sit, options: { fill: bg, align: 'center', color: cor } },
+      ];
+    }),
+  ];
+
+  const tabH = Math.min(1.8, 0.28 * (discs.length + 1));
+  slide.addTable(discRows, {
+    x: 0.3, y: 2.22, w: 5.5, h: tabH,
+    fontSize: 10, fontFace: 'Calibri', color: PPTX_CORES.cinzaEsc,
+    border: { pt: 0.5, color: 'E5E7EB' },
+    rowH: 0.28,
+    colW: [3.2, 1.2, 1.1],
+  });
+
+  // Digital na turma
+  const regsDigTurma = APP.digital.filter(r => r.TURMA === turma);
+  if (regsDigTurma.length) {
+    const calcDig = calcDigital(regsDigTurma);
+    if (calcDig) {
+      slide.addShape(prs.ShapeType.rect, {
+        x: 5.95, y: 2.22, w: 3.75, h: 1.5,
+        fill: { color: 'FDF4FF' }, line: { color: 'E9D5FF', pt: 1 }, rectRadius: 0.08,
+      });
+      slide.addText('💻 Material Digital', {
+        x: 6.1, y: 2.3, w: 3.5, h: 0.28,
+        fontSize: 11, bold: true, color: PPTX_CORES.roxoEsc, fontFace: 'Calibri',
+      });
+      const digCor = calcDig.pct >= 80 ? PPTX_CORES.verde : calcDig.pct >= 50 ? PPTX_CORES.amber : PPTX_CORES.verm;
+      slide.addText(`${calcDig.pct.toFixed(0)}%`, {
+        x: 6.1, y: 2.55, w: 3.5, h: 0.52,
+        fontSize: 30, bold: true, color: digCor, fontFace: 'Calibri', align: 'center',
+      });
+      slide.addText(`${calcDig.concluido} de ${calcDig.previsto} aulas concluídas`, {
+        x: 6.1, y: 3.05, w: 3.5, h: 0.25,
+        fontSize: 10, color: PPTX_CORES.cinza, fontFace: 'Calibri', align: 'center',
+      });
+    }
+  }
+
+  return slide;
+}
+
+function pptxSlidesDetalhado(prs, turma, disc) {
+  const regs = APP.notas.filter(r =>
+    (!turma || r.TURMA === turma) &&
+    (!disc  || r.DISCIPLINA === disc)
+  );
+  if (!regs.length) return;
+
+  const alunos = unique(regs.map(r => r.ESTUDANTE));
+  let ap = 0, rp = 0, alF = 0;
+  alunos.forEach(a => {
+    const ds = regs.filter(r => r.ESTUDANTE === a).map(r => dadosReg(r));
+    if (ds.some(d => d.sit === 'Reprovado')) rp++; else ap++;
+    if (ds.some(d => d.alFreq)) alF++;
+  });
+  const ms = regs.map(r => calcMedia(r)).filter(m => m !== null);
+  const mg = ms.length ? +(ms.reduce((a, b) => a + b, 0) / ms.length).toFixed(1) : 0;
+
+  // ── Slide de resumo ──────────────────────────────────────
+  const slideSumario = prs.addSlide();
+  const headerTitulo = [turma, disc].filter(Boolean).join(' · ') || 'Relatório Detalhado';
+
+  slideSumario.addShape(prs.ShapeType.rect, {
+    x: 0, y: 0, w: '100%', h: 0.65,
+    fill: { color: PPTX_CORES.roxo },
+  });
+  slideSumario.addText(`Resumo — ${headerTitulo}`, {
+    x: 0.3, y: 0, w: 9.4, h: 0.65,
+    fontSize: 16, bold: true, color: PPTX_CORES.branco, fontFace: 'Calibri', valign: 'middle',
+  });
+
+  const metCards = [
+    { label: 'Total de Alunos', valor: String(alunos.length), cor: PPTX_CORES.azulCl,  borda: PPTX_CORES.azul,  corV: PPTX_CORES.azulEsc },
+    { label: 'Aprovados',       valor: String(ap),            cor: PPTX_CORES.verdeCl, borda: PPTX_CORES.verde, corV: PPTX_CORES.verdeEsc },
+    { label: 'Reprovados',      valor: String(rp),            cor: PPTX_CORES.vermCl,  borda: PPTX_CORES.verm,  corV: PPTX_CORES.verm },
+    { label: 'Alerta Freq.',    valor: String(alF),           cor: PPTX_CORES.amberCl, borda: PPTX_CORES.amber, corV: PPTX_CORES.amber },
+    { label: 'Média Geral',     valor: mg.toFixed(1).replace('.', ','), cor: PPTX_CORES.roxoCl, borda: PPTX_CORES.roxo, corV: PPTX_CORES.roxoEsc },
+  ];
+  const cW = 1.82, cH = 0.95, cY = 0.8, cGap = 0.065;
+  metCards.forEach((c, i) => {
+    const cX = 0.25 + i * (cW + cGap);
+    slideSumario.addShape(prs.ShapeType.rect, { x: cX, y: cY, w: cW, h: cH, fill: { color: c.cor }, line: { color: c.borda, pt: 1.5 }, rectRadius: 0.07 });
+    slideSumario.addText(c.valor, { x: cX, y: cY + 0.1, w: cW, h: 0.52, fontSize: 26, bold: true, color: c.corV, align: 'center', fontFace: 'Calibri' });
+    slideSumario.addText(c.label, { x: cX, y: cY + 0.62, w: cW, h: 0.26, fontSize: 10, color: PPTX_CORES.cinzaEsc, align: 'center', fontFace: 'Calibri' });
+  });
+
+  // Taxa de aprovação
+  const [txAp, txRp] = distribuirPct([ap, rp]);
+  const barY = 1.95, barX = 0.3, barW = 9.4, barH = 0.32;
+  slideSumario.addShape(prs.ShapeType.rect, { x: barX, y: barY, w: barW, h: barH, fill: { color: PPTX_CORES.vermCl }, line: { color: PPTX_CORES.verm, pt: 0.5 } });
+  if (txAp > 0) {
+    slideSumario.addShape(prs.ShapeType.rect, {
+      x: barX, y: barY, w: +(barW * txAp / 100).toFixed(2), h: barH,
+      fill: { color: PPTX_CORES.verde }, line: { color: PPTX_CORES.verde, pt: 0 },
+    });
+  }
+  slideSumario.addText(`Aprovados: ${txAp}%`, { x: barX + 0.1, y: barY, w: 3, h: barH, fontSize: 10, bold: true, color: PPTX_CORES.branco, valign: 'middle', fontFace: 'Calibri' });
+  slideSumario.addText(`Reprovados: ${txRp}%`, { x: barX + barW - 2.5, y: barY, w: 2.4, h: barH, fontSize: 10, bold: true, color: PPTX_CORES.verm, align: 'right', valign: 'middle', fontFace: 'Calibri' });
+
+  // Tabela de médias por disciplina (se não filtrou disc)
+  if (!disc) {
+    const discsRegs = unique(regs.map(r => r.DISCIPLINA));
+    slideSumario.addText('Médias por disciplina', {
+      x: 0.3, y: 2.42, w: 9.4, h: 0.28,
+      fontSize: 11, bold: true, color: PPTX_CORES.cinzaEsc, fontFace: 'Calibri',
+    });
+    const discTabRows = [
+      [
+        { text: 'Disciplina', options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.roxo } },
+        { text: 'Média',      options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.roxo, align: 'center' } },
+      ],
+      ...discsRegs.map((d, idx) => {
+        const mds = regs.filter(r => r.DISCIPLINA === d).map(r => calcMedia(r)).filter(m => m !== null);
+        const mdg = mds.length ? +(mds.reduce((a, b) => a + b, 0) / mds.length).toFixed(2) : null;
+        const bg = idx % 2 === 0 ? PPTX_CORES.branco : PPTX_CORES.cinzaCl;
+        return [
+          { text: d, options: { fill: bg, bold: true } },
+          { text: mdg !== null ? mdg.toFixed(1).replace('.', ',') : '—', options: { fill: bg, align: 'center', color: mdg !== null && mdg >= CFG.mediaAprov ? PPTX_CORES.verde : PPTX_CORES.verm, bold: true } },
+        ];
+      }),
+    ];
+    slideSumario.addTable(discTabRows, {
+      x: 0.3, y: 2.72, w: 5.2, h: Math.min(1.2, 0.27 * (discsRegs.length + 1)),
+      fontSize: 10, fontFace: 'Calibri', color: PPTX_CORES.cinzaEsc,
+      border: { pt: 0.5, color: 'E5E7EB' }, rowH: 0.27, colW: [3.8, 1.4],
+    });
+  }
+
+  // ── Slides de dados por página de alunos ────────────────
+  const ALUNOS_POR_PAGINA = 14;
+  const paginas = Math.ceil(regs.length / ALUNOS_POR_PAGINA);
+
+  for (let p = 0; p < paginas; p++) {
+    const slideD = prs.addSlide();
+    const pageRegs = regs.slice(p * ALUNOS_POR_PAGINA, (p + 1) * ALUNOS_POR_PAGINA);
+    const pageLabel = paginas > 1 ? ` (${p + 1}/${paginas})` : '';
+
+    slideD.addShape(prs.ShapeType.rect, {
+      x: 0, y: 0, w: '100%', h: 0.55,
+      fill: { color: PPTX_CORES.azulEsc },
+    });
+    slideD.addText(`Lista de Alunos${pageLabel} — ${headerTitulo}`, {
+      x: 0.3, y: 0, w: 9.4, h: 0.55,
+      fontSize: 13, bold: true, color: PPTX_CORES.branco, fontFace: 'Calibri', valign: 'middle',
+    });
+
+    const hasDisc = !!disc;
+    const cabecalho = hasDisc
+      ? [
+          { text: 'Aluno',       options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul } },
+          { text: 'Turma',       options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul, align: 'center' } },
+          { text: 'B1',          options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul, align: 'center' } },
+          { text: 'B2',          options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul, align: 'center' } },
+          { text: 'B3',          options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul, align: 'center' } },
+          { text: 'B4',          options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul, align: 'center' } },
+          { text: 'Média',       options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul, align: 'center' } },
+          { text: 'Freq.',       options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul, align: 'center' } },
+          { text: 'Situação',    options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul, align: 'center' } },
+        ]
+      : [
+          { text: 'Aluno',       options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul } },
+          { text: 'Média',       options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul, align: 'center' } },
+          { text: 'Freq.',       options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul, align: 'center' } },
+          { text: 'Situação',    options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.azul, align: 'center' } },
+        ];
+
+    const dataRows = pageRegs.map((r, idx) => {
+      const d = dadosReg(r);
+      const bg = idx % 2 === 0 ? PPTX_CORES.branco : PPTX_CORES.cinzaCl;
+      const medCor = d.media === null ? PPTX_CORES.cinza : d.media >= CFG.mediaAprov ? PPTX_CORES.verde : PPTX_CORES.verm;
+      const freqCor = !d.freq ? PPTX_CORES.cinza : d.freq.pct >= CFG.freqMin ? PPTX_CORES.verde : PPTX_CORES.verm;
+      const freqStr = d.freq ? `${d.freq.pct.toFixed(1)}%` : '—';
+      const sitStr = d.sit === 'Aprovado' ? (d.alFreq ? 'Apr. ⚠Freq' : 'Aprovado') : d.sit === 'Reprovado' ? 'Reprovado' : '—';
+      const sitCor = d.sit === 'Aprovado' ? PPTX_CORES.verde : d.sit === 'Reprovado' ? PPTX_CORES.verm : PPTX_CORES.cinza;
+
+      const notaCell = (v) => ({
+        text: v !== null ? v.toFixed(1).replace('.', ',') : '—',
+        options: {
+          fill: v !== null && v < CFG.mediaAprov ? PPTX_CORES.vermCl : bg,
+          align: 'center',
+          color: v !== null && v < CFG.mediaAprov ? PPTX_CORES.verm : PPTX_CORES.cinzaEsc,
+          bold: v !== null && v < CFG.mediaAprov,
+        },
+      });
+
+      if (hasDisc) {
+        return [
+          { text: r.ESTUDANTE, options: { fill: bg, fontSize: 9 } },
+          { text: r.TURMA,     options: { fill: bg, align: 'center' } },
+          notaCell(r.b1), notaCell(r.b2), notaCell(r.b3), notaCell(r.b4),
+          { text: d.media !== null ? d.media.toFixed(1).replace('.', ',') : '—', options: { fill: d.media !== null && d.media < CFG.mediaAprov ? PPTX_CORES.vermCl : bg, align: 'center', color: medCor, bold: true } },
+          { text: freqStr, options: { fill: bg, align: 'center', color: freqCor, bold: d.alFreq } },
+          { text: sitStr,  options: { fill: bg, align: 'center', color: sitCor, bold: true } },
+        ];
+      } else {
+        return [
+          { text: r.ESTUDANTE, options: { fill: bg, fontSize: 9 } },
+          { text: d.media !== null ? d.media.toFixed(1).replace('.', ',') : '—', options: { fill: d.media !== null && d.media < CFG.mediaAprov ? PPTX_CORES.vermCl : bg, align: 'center', color: medCor, bold: true } },
+          { text: freqStr, options: { fill: bg, align: 'center', color: freqCor, bold: d.alFreq } },
+          { text: sitStr,  options: { fill: bg, align: 'center', color: sitCor, bold: true } },
+        ];
+      }
+    });
+
+    const colWidths = hasDisc ? [3.0, 0.7, 0.7, 0.7, 0.7, 0.7, 0.85, 0.8, 1.05] : [6.2, 1.2, 1.2, 1.8];
+    const tableW = colWidths.reduce((a, b) => a + b, 0);
+    slideD.addTable([cabecalho, ...dataRows], {
+      x: 0.3, y: 0.65, w: tableW, h: 3.7,
+      fontSize: 10, fontFace: 'Calibri', color: PPTX_CORES.cinzaEsc,
+      border: { pt: 0.5, color: 'E5E7EB' },
+      rowH: 0.245,
+      colW: colWidths,
+    });
+  }
+
+  // ── Slide Material Digital (se houver) ──────────────────
+  const regsDigFilt = APP.digital.filter(r =>
+    (!turma || r.TURMA === turma) &&
+    (!disc  || r.DISCIPLINA === disc)
+  );
+  if (regsDigFilt.length) {
+    const slideD2 = prs.addSlide();
+    slideD2.addShape(prs.ShapeType.rect, {
+      x: 0, y: 0, w: '100%', h: 0.65,
+      fill: { color: PPTX_CORES.roxo },
+    });
+    slideD2.addText('💻 Material Digital — Progresso por Bimestre', {
+      x: 0.3, y: 0, w: 9.4, h: 0.65,
+      fontSize: 16, bold: true, color: PPTX_CORES.branco, fontFace: 'Calibri', valign: 'middle',
+    });
+
+    const discsD = unique(regsDigFilt.map(r => r.DISCIPLINA));
+    const turmasD = unique(regsDigFilt.map(r => r.TURMA));
+    const combos = [];
+    turmasD.forEach(t => discsD.forEach(d => {
+      const rr = regsDigFilt.filter(x => x.TURMA === t && x.DISCIPLINA === d);
+      if (rr.length) combos.push({ turma: t, disc: d, regs: rr });
+    }));
+
+    const digTabRows = [
+      [
+        { text: 'Turma',      options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.roxo } },
+        { text: 'Disciplina', options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.roxo } },
+        { text: '1º Bim',     options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.roxo, align: 'center' } },
+        { text: '2º Bim',     options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.roxo, align: 'center' } },
+        { text: '3º Bim',     options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.roxo, align: 'center' } },
+        { text: '4º Bim',     options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.roxo, align: 'center' } },
+        { text: 'Total %',    options: { bold: true, color: PPTX_CORES.branco, fill: PPTX_CORES.roxo, align: 'center' } },
+      ],
+      ...combos.map((c, idx) => {
+        const bims = calcDigitalBimestres(c.regs);
+        const total = calcDigital(c.regs);
+        const bg = idx % 2 === 0 ? PPTX_CORES.branco : 'F3E8FF';
+        const bimCell = (b) => {
+          if (!b) return { text: '—', options: { fill: bg, align: 'center', color: PPTX_CORES.cinza } };
+          const cor = b.pct >= 80 ? PPTX_CORES.verde : b.pct >= 50 ? PPTX_CORES.amber : PPTX_CORES.verm;
+          return { text: `${b.pct.toFixed(0)}%\n(${b.concluido}/${b.previsto})`, options: { fill: bg, align: 'center', color: cor, bold: true, fontSize: 9 } };
+        };
+        const totalCor = total ? (total.pct >= 80 ? PPTX_CORES.verde : total.pct >= 50 ? PPTX_CORES.amber : PPTX_CORES.verm) : PPTX_CORES.cinza;
+        return [
+          { text: c.turma, options: { fill: bg, bold: true, align: 'center' } },
+          { text: c.disc,  options: { fill: bg } },
+          bimCell(bims[0]), bimCell(bims[1]), bimCell(bims[2]), bimCell(bims[3]),
+          { text: total ? `${total.pct.toFixed(0)}%` : '—', options: { fill: bg, align: 'center', color: totalCor, bold: true } },
+        ];
+      }),
+    ];
+
+    slideD2.addTable(digTabRows, {
+      x: 0.3, y: 0.75, w: 9.4, h: Math.min(3.5, 0.38 * (combos.length + 1)),
+      fontSize: 10, fontFace: 'Calibri', color: PPTX_CORES.cinzaEsc,
+      border: { pt: 0.5, color: 'E9D5FF' },
+      rowH: 0.38,
+      colW: [0.9, 2.3, 1.1, 1.1, 1.1, 1.1, 1.0],
+    });
+  }
+}
+
+// ── Função principal ────────────────────────────────────────
+
+function gerarPPTX() {
+  if (!APP.notas.length) {
+    alert('Importe dados antes de gerar a apresentação.');
+    return;
+  }
+
+  loader(true, 'Gerando apresentação PPTX...');
+
+  setTimeout(() => {
+    try {
+      const turmaSel = document.getElementById('pptx-sel-turma')?.value || '';
+      const discSel  = document.getElementById('pptx-sel-disc')?.value  || '';
+      const modoDetalhado = !!(turmaSel || discSel);
+      const data = new Date().toLocaleDateString('pt-BR');
+
+      const prs = new PptxGenJS();
+      prs.layout = 'LAYOUT_WIDE';
+      prs.author  = CFG.escola;
+      prs.company = CFG.escola;
+      prs.subject = 'Conselho de Classe';
+
+      if (!modoDetalhado) {
+        // ══ RELATÓRIO GERAL ══════════════════════════════════
+        pptxCapa(
+          prs,
+          'Relatório Geral — Conselho de Classe',
+          `${CFG.escola} · ${CFG.etapa}`,
+          `Gerado em ${data} · Todas as turmas`
+        );
+
+        const turmas = unique(APP.notas.map(r => r.TURMA));
+        const alunos = unique(APP.notas.map(r => r.ESTUDANTE));
+        let ap = 0, rp = 0, alF = 0;
+        alunos.forEach(a => {
+          const regs = APP.notas.filter(r => r.ESTUDANTE === a);
+          const ds = regs.map(r => dadosReg(r));
+          if (ds.some(d => d.sit === 'Reprovado')) rp++; else ap++;
+          if (ds.some(d => d.alFreq)) alF++;
+        });
+        const medias = APP.notas.map(r => calcMedia(r)).filter(m => m !== null);
+        const mg = medias.length ? +(medias.reduce((a, b) => a + b, 0) / medias.length) : 0;
+
+        const resumoTurmas = turmas.map(t => {
+          const al = unique(APP.notas.filter(r => r.TURMA === t).map(r => r.ESTUDANTE));
+          let ta = 0, tr = 0, taf = 0;
+          al.forEach(a => {
+            const ds = APP.notas.filter(r => r.ESTUDANTE === a && r.TURMA === t).map(r => dadosReg(r));
+            if (ds.some(d => d.sit === 'Reprovado')) tr++; else ta++;
+            if (ds.some(d => d.alFreq)) taf++;
+          });
+          const ms2 = APP.notas.filter(r => r.TURMA === t).map(r => calcMedia(r)).filter(m => m !== null);
+          const tmg = ms2.length ? +(ms2.reduce((a, b) => a + b, 0) / ms2.length).toFixed(1) : 0;
+          return { turma: t, alunos: al.length, aprov: ta, reprov: tr, alFreq: taf, mg: +tmg };
+        });
+
+        pptxSlideResumoEscola(prs, { turmas: resumoTurmas, totalAlunos: alunos.length, aprov: ap, reprov: rp, alFreqs: alF, mg });
+
+        turmas.forEach(t => pptxSlideResumoPorTurma(prs, t));
+
+        prs.writeFile({ fileName: `Conselho_Classe_Geral_${data.replace(/\//g, '-')}.pptx` });
+
+      } else {
+        // ══ RELATÓRIO DETALHADO ═══════════════════════════════
+        const labelTurma = turmaSel || 'Todas as turmas';
+        const labelDisc  = discSel  || 'Todas as disciplinas';
+        const subtitulo  = [turmaSel && `Turma ${turmaSel}`, discSel].filter(Boolean).join(' · ');
+
+        pptxCapa(
+          prs,
+          'Relatório Detalhado — Conselho de Classe',
+          `${CFG.escola} · ${subtitulo}`,
+          `Gerado em ${data} · ${CFG.etapa}`
+        );
+
+        pptxSlidesDetalhado(prs, turmaSel, discSel);
+
+        const nomeSafe = subtitulo.replace(/[^a-zA-Z0-9À-ÿ\s]/g, '').replace(/\s+/g, '_');
+        prs.writeFile({ fileName: `Conselho_Classe_${nomeSafe}_${data.replace(/\//g, '-')}.pptx` });
+      }
+
+    } catch (err) {
+      alert('Erro ao gerar PPTX: ' + err.message);
+      console.error(err);
+    }
+    loader(false);
+  }, 80);
+}
+
+// ── UI da seção PPTX ────────────────────────────────────────
+
+function popSelectsPPTX() {
+  if (!APP.notas.length) return;
+  const turmas = unique(APP.notas.map(r => r.TURMA));
+  const discs  = unique(APP.notas.map(r => r.DISCIPLINA));
+
+  const selT = document.getElementById('pptx-sel-turma');
+  const selD = document.getElementById('pptx-sel-disc');
+  if (selT) selT.innerHTML = '<option value="">Todas as turmas (Relatório Geral)</option>' +
+    turmas.map(t => `<option value="${t}">${t}</option>`).join('');
+  if (selD) selD.innerHTML = '<option value="">Todas as disciplinas</option>' +
+    discs.map(d => `<option value="${d}">${d}</option>`).join('');
+  atualizarContextoPPTX();
+}
+
+function atualizarContextoPPTX() {
+  if (!APP.notas.length) return;
+  const turmaSel = document.getElementById('pptx-sel-turma')?.value || '';
+  const discSel  = document.getElementById('pptx-sel-disc')?.value  || '';
+  const modoDetalhado = !!(turmaSel || discSel);
+  const turmas = unique(APP.notas.map(r => r.TURMA));
+  const alunos = unique(APP.notas.filter(r =>
+    (!turmaSel || r.TURMA === turmaSel) &&
+    (!discSel  || r.DISCIPLINA === discSel)
+  ).map(r => r.ESTUDANTE));
+
+  const prevTitulo = document.getElementById('pptx-prev-titulo');
+  const prevDesc   = document.getElementById('pptx-prev-desc');
+  const prevSlides = document.getElementById('pptx-prev-slides');
+
+  if (!modoDetalhado) {
+    if (prevTitulo) prevTitulo.textContent = 'Relatório Geral da Escola';
+    if (prevDesc)   prevDesc.textContent = `${turmas.length} turmas · ${unique(APP.notas.map(r => r.ESTUDANTE)).length} alunos`;
+    if (prevSlides) prevSlides.innerHTML = `
+      <div class="pptx-slide-item"><span class="pptx-slide-num">1</span> Capa</div>
+      <div class="pptx-slide-item"><span class="pptx-slide-num">2</span> Painel consolidado</div>
+      ${turmas.map((t, i) => `<div class="pptx-slide-item"><span class="pptx-slide-num">${i + 3}</span> Turma ${t}</div>`).join('')}
+    `;
+  } else {
+    const label = [turmaSel && `Turma ${turmaSel}`, discSel].filter(Boolean).join(' · ');
+    if (prevTitulo) prevTitulo.textContent = `Relatório Detalhado — ${label}`;
+    if (prevDesc)   prevDesc.textContent = `${alunos.length} alunos · dados filtrados`;
+    const regs = APP.notas.filter(r => (!turmaSel || r.TURMA === turmaSel) && (!discSel || r.DISCIPLINA === discSel));
+    const pags = Math.ceil(regs.length / 14);
+    const temDig = APP.digital.some(r => (!turmaSel || r.TURMA === turmaSel) && (!discSel || r.DISCIPLINA === discSel));
+    if (prevSlides) prevSlides.innerHTML = `
+      <div class="pptx-slide-item"><span class="pptx-slide-num">1</span> Capa</div>
+      <div class="pptx-slide-item"><span class="pptx-slide-num">2</span> Resumo e indicadores</div>
+      ${Array.from({length: pags}, (_, i) => `<div class="pptx-slide-item"><span class="pptx-slide-num">${i + 3}</span> Lista de alunos${pags > 1 ? ` (${i+1}/${pags})` : ''}</div>`).join('')}
+      ${temDig ? `<div class="pptx-slide-item"><span class="pptx-slide-num">${3 + pags}</span> Material Digital</div>` : ''}
+    `;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  RADAR PREDITIVO — Centro de Inteligência Pedagógica
+//  Regras anti-punição ao professor: alertas de discrepância
+//  para investigação, não veredictos.
+// ══════════════════════════════════════════════════════════════
+
+function renderRadar() {
+  if (!APP.notas.length) {
+    document.getElementById('mg-radar').innerHTML =
+      `<div class="mc" style="grid-column:1/-1;border-left:4px solid #c2410c;">
+        <div class="ml">Sem dados</div>
+        <div class="mv" style="font-size:14px;font-weight:500;color:#c2410c;">Importe dados para ativar o Radar Preditivo</div>
+      </div>`;
+    return;
+  }
+
+  const turmaFiltro = document.getElementById('radar-sel-turma')?.value || '';
+  const discFiltro  = document.getElementById('radar-sel-disc')?.value  || '';
+
+  // Registros filtrados
+  const regs = APP.notas.filter(r =>
+    (!turmaFiltro || r.TURMA === turmaFiltro) &&
+    (!discFiltro  || r.DISCIPLINA === discFiltro)
+  );
+  if (!regs.length) {
+    document.getElementById('mg-radar').innerHTML =
+      `<div class="mc" style="grid-column:1/-1;border-left:4px solid var(--cinza);">
+        <div class="ml">Nenhum registro</div>
+        <div class="mv c-rx" style="font-size:14px;">Ajuste os filtros para visualizar dados</div>
+      </div>`;
+    return;
+  }
+
+  const turmas = unique(regs.map(r => r.TURMA));
+  const discs  = unique(regs.map(r => r.DISCIPLINA));
+  const alunos = unique(regs.map(r => r.ESTUDANTE));
+
+  // Métricas globais do filtro
+  let totalRisco = 0, totalColapso = 0, totalDesistencia = 0;
+  alunos.forEach(a => {
+    const aRegs = regs.filter(r => r.ESTUDANTE === a);
+    const aDados = aRegs.map(r => dadosReg(r));
+    const reprovCount = aDados.filter(d => d.sit === 'Reprovado').length;
+    const alFreqCount = aDados.filter(d => d.alFreq).length;
+    const medias = aDados.map(d => d.media).filter(m => m !== null);
+    const mediaGeral = medias.length ? +(medias.reduce((a,b)=>a+b,0)/medias.length).toFixed(2) : null;
+    if (reprovCount > 0) totalRisco++;
+    if (reprovCount >= Math.ceil(aDados.length * 0.5) && alFreqCount > 0) totalColapso++;
+    if (mediaGeral !== null && mediaGeral >= CFG.mediaAprov && alFreqCount > 0) totalDesistencia++;
+  });
+
+  const pctRisco = alunos.length ? Math.round(totalRisco / alunos.length * 100) : 0;
+  document.getElementById('mg-radar').innerHTML = `
+    <div class="mc bl"><div class="ml">Alunos no filtro</div><div class="mv c-bl">${alunos.length}</div><div class="ms">${turmas.length} turma(s) · ${discs.length} disciplina(s)</div></div>
+    <div class="mc vm"><div class="ml">Em risco de reprovação</div><div class="mv c-vm">${totalRisco}</div><div class="ms">${pctRisco}% do filtro</div></div>
+    <div class="mc am"><div class="ml">Desistência silenciosa</div><div class="mv c-am">${totalDesistencia}</div><div class="ms">nota ok, faltas crescentes</div></div>
+    <div class="mc rx"><div class="ml">Colapso global</div><div class="mv c-rx">${totalColapso}</div><div class="ms">reprov. maioria + faltas altas</div></div>`;
+
+  // ── 1. Alertas Discrepância Digital vs Notas ─────────────
+  const bodyDisc = document.getElementById('radar-discrepancia-body');
+  if (!APP.digital.length) {
+    bodyDisc.innerHTML = `<p style="color:var(--cinza);font-size:13px;"><i class="bi bi-info-circle"></i> Importe uma planilha com a aba <strong>DIGITAL</strong> para ativar esta análise cruzada.</p>`;
+  } else {
+    let htmlDisc = '';
+    // Para cada combinação turma × disciplina no filtro
+    const combos = [];
+    turmas.forEach(t => discs.forEach(d => {
+      if (regs.some(r => r.TURMA === t && r.DISCIPLINA === d)) {
+        combos.push({ turma: t, disc: d });
+      }
+    }));
+
+    combos.forEach(({ turma, disc }) => {
+      const digRegs = APP.digital.filter(r => r.TURMA === turma && r.DISCIPLINA === disc);
+      if (!digRegs.length) return;
+      const calc = calcDigital(digRegs);
+      if (!calc) return;
+
+      const notasCombo = regs.filter(r => r.TURMA === turma && r.DISCIPLINA === disc);
+      const mediasCombo = notasCombo.map(r => calcMedia(r)).filter(m => m !== null);
+      if (!mediasCombo.length) return;
+      const mediaMedia = +(mediasCombo.reduce((a,b)=>a+b,0)/mediasCombo.length).toFixed(2);
+
+      // Regra: digital > 70% e média < 5.0 → discrepância
+      if (calc.pct > 70 && mediaMedia < CFG.mediaAprov) {
+        const alunosBaixoRend = notasCombo
+          .filter(r => { const m = calcMedia(r); return m !== null && m < CFG.mediaAprov; })
+          .map(r => r.ESTUDANTE);
+        htmlDisc += `
+          <div class="radar-alerta radar-alerta-disc">
+            <div class="radar-alerta-icon">⚠️</div>
+            <div class="radar-alerta-body">
+              <div class="radar-alerta-titulo">Discrepância em ${disc} — Turma ${turma}</div>
+              <div class="radar-alerta-desc">
+                Alto volume de material digital aplicado (<strong>${calc.pct.toFixed(0)}%</strong> de cumprimento),
+                mas baixo rendimento da turma (média <strong>${mediaMedia.toFixed(1).replace('.',',')}</strong>).
+                <br><strong>Sugestão:</strong> Investigar engajamento dos alunos nas avaliações (possíveis "chutes" ou desinteresse).
+                Esta discrepância <em>não implica falha do professor</em> — o material foi aplicado.
+              </div>
+              <div class="radar-alerta-alunos">
+                <span class="radar-alunos-label">Alunos com baixo rendimento nesta métrica:</span>
+                <div class="radar-alunos-lista">
+                  ${alunosBaixoRend.map(n => `<span class="radar-aluno-tag radar-tag-amber">${n}</span>`).join('')}
+                </div>
+              </div>
+            </div>
+          </div>`;
+      }
+
+      // Regra adicional: digital < 30% e média >= 5.0 → positivo sem muito digital
+      if (calc.pct < 30 && mediaMedia >= CFG.mediaAprov) {
+        htmlDisc += `
+          <div class="radar-alerta radar-alerta-info">
+            <div class="radar-alerta-icon">ℹ️</div>
+            <div class="radar-alerta-body">
+              <div class="radar-alerta-titulo">Ponto de curiosidade em ${disc} — Turma ${turma}</div>
+              <div class="radar-alerta-desc">
+                Baixo uso de material digital (<strong>${calc.pct.toFixed(0)}%</strong>) com bom rendimento (média <strong>${mediaMedia.toFixed(1).replace('.',',')}</strong>).
+                <strong>Sugestão:</strong> Verificar se há metodologias complementares em uso ou se o material digital ainda será ampliado.
+              </div>
+            </div>
+          </div>`;
+      }
+    });
+
+    bodyDisc.innerHTML = htmlDisc ||
+      `<div class="radar-alerta radar-alerta-ok"><div class="radar-alerta-icon">✅</div>
+       <div class="radar-alerta-body"><div class="radar-alerta-titulo">Nenhuma discrepância digital detectada no filtro atual</div>
+       <div class="radar-alerta-desc">Os dados de material digital e notas estão alinhados para as turmas/disciplinas selecionadas.</div></div></div>`;
+  }
+
+  // ── 2. Alerta de volume de alunos em risco por turma/disc ─
+  const bodyRisco = document.getElementById('radar-risco-turma-body');
+  let htmlRisco = '';
+  const combosRisco = [];
+  turmas.forEach(t => discs.forEach(d => {
+    if (regs.some(r => r.TURMA === t && r.DISCIPLINA === d)) combosRisco.push({ turma: t, disc: d });
+  }));
+
+  combosRisco.forEach(({ turma, disc }) => {
+    const notasCombo = regs.filter(r => r.TURMA === turma && r.DISCIPLINA === disc);
+    if (!notasCombo.length) return;
+    const dados = notasCombo.map(r => dadosReg(r));
+    const emRisco = dados.filter(d => d.sit === 'Reprovado');
+    const pct = Math.round(emRisco.length / dados.length * 100);
+    if (pct > 30) {
+      htmlRisco += `
+        <div class="radar-alerta radar-alerta-risco">
+          <div class="radar-alerta-icon">📊</div>
+          <div class="radar-alerta-body">
+            <div class="radar-alerta-titulo">Ponto de Atenção em ${disc} — Turma ${turma}</div>
+            <div class="radar-alerta-desc">
+              <strong>${emRisco.length} alunos</strong> (${pct}% da turma nesta disciplina) estão com projeção de reprovação.
+              <strong>Sugestão:</strong> Alinhar plano de recuperação com o professor. Esta situação reflete o desempenho dos estudantes, não a metodologia.
+            </div>
+            <div class="radar-alerta-alunos">
+              <span class="radar-alunos-label">Estudantes em risco:</span>
+              <div class="radar-alunos-lista">
+                ${emRisco.map(d => `<span class="radar-aluno-tag radar-tag-verm">${d.n.ESTUDANTE}</span>`).join('')}
+              </div>
+            </div>
+          </div>
+        </div>`;
+    }
+  });
+
+  bodyRisco.innerHTML = htmlRisco ||
+    `<div class="radar-alerta radar-alerta-ok"><div class="radar-alerta-icon">✅</div>
+     <div class="radar-alerta-body"><div class="radar-alerta-titulo">Nenhuma turma/disciplina com mais de 30% em risco</div>
+     <div class="radar-alerta-desc">Todas as combinações turma × disciplina no filtro estão dentro do limite de atenção.</div></div></div>`;
+
+  // ── 3. Perfis de Risco Individual ────────────────────────
+  const desistentes = [], localizados = [], colapsos = [];
+
+  alunos.forEach(a => {
+    const aRegs = regs.filter(r => r.ESTUDANTE === a);
+    const aDados = aRegs.map(r => dadosReg(r));
+    const turmaAluno = aRegs[0]?.TURMA || '';
+    const reprovCount = aDados.filter(d => d.sit === 'Reprovado').length;
+    const alFreqCount = aDados.filter(d => d.alFreq).length;
+    const medias = aDados.map(d => d.media).filter(m => m !== null);
+    const mediaGeral = medias.length ? +(medias.reduce((x,y)=>x+y,0)/medias.length).toFixed(2) : null;
+    const totalDiscs = aDados.length;
+
+    // Colapso global: reprovando em >= 50% das disciplinas E faltas altas
+    if (reprovCount >= Math.ceil(totalDiscs * 0.5) && alFreqCount > 0) {
+      colapsos.push({ nome: a, turma: turmaAluno, reprov: reprovCount, totalDiscs, alFreq: alFreqCount });
+    }
+    // Desistência silenciosa: nota >= 5 geral mas faltas crescentes
+    else if (mediaGeral !== null && mediaGeral >= CFG.mediaAprov && alFreqCount > 0) {
+      desistentes.push({ nome: a, turma: turmaAluno, media: mediaGeral, alFreq: alFreqCount });
+    }
+    // Dificuldade localizada: reprovando em 1 ou 2 disciplinas
+    else if (reprovCount === 1 || reprovCount === 2) {
+      const discsReprov = aRegs
+        .filter(r => { const d = dadosReg(r); return d.sit === 'Reprovado'; })
+        .map(r => r.DISCIPLINA);
+      localizados.push({ nome: a, turma: turmaAluno, discs: discsReprov });
+    }
+  });
+
+  function perfilItem(item, tipo) {
+    if (tipo === 'desistencia') {
+      return `<div class="radar-perfil-item">
+        <strong>${item.nome}</strong>
+        <span class="radar-perfil-detalhe">${item.turma} · Média ${item.media.toFixed(1).replace('.',',')} · ${item.alFreq} disc. com alerta freq.</span>
+      </div>`;
+    }
+    if (tipo === 'localizada') {
+      return `<div class="radar-perfil-item">
+        <strong>${item.nome}</strong>
+        <span class="radar-perfil-detalhe">${item.turma} · Reprovando em: ${item.discs.join(', ')}</span>
+      </div>`;
+    }
+    if (tipo === 'colapso') {
+      return `<div class="radar-perfil-item">
+        <strong>${item.nome}</strong>
+        <span class="radar-perfil-detalhe">${item.turma} · ${item.reprov}/${item.totalDiscs} disc. reprovadas · ${item.alFreq} com alerta freq.</span>
+      </div>`;
+    }
+    return '';
+  }
+
+  document.getElementById('radar-lista-desistencia').innerHTML = desistentes.length
+    ? desistentes.map(i => perfilItem(i, 'desistencia')).join('')
+    : `<div class="radar-perfil-vazio">Nenhum aluno neste perfil no filtro selecionado.</div>`;
+
+  document.getElementById('radar-lista-localizada').innerHTML = localizados.length
+    ? localizados.map(i => perfilItem(i, 'localizada')).join('')
+    : `<div class="radar-perfil-vazio">Nenhum aluno neste perfil no filtro selecionado.</div>`;
+
+  document.getElementById('radar-lista-colapso').innerHTML = colapsos.length
+    ? colapsos.map(i => perfilItem(i, 'colapso')).join('')
+    : `<div class="radar-perfil-vazio">Nenhum aluno neste perfil no filtro selecionado.</div>`;
+
+  // ── 4. Índice de Viabilidade de Recuperação ──────────────
+  const bodyViab = document.getElementById('radar-viabilidade-body');
+
+  // Para cada aluno + disciplina no filtro, calcular nota necessária
+  const viabRows = [];
+
+  regs.forEach(r => {
+    const { media, sit, parc } = dadosReg(r);
+    if (media === null) return;
+    if (sit !== 'Reprovado' && !parc) return; // só parciais ou reprovados
+
+    // Quantos bimestres já foram lançados
+    const bims = [r.b1, r.b2, r.b3, r.b4];
+    const lancados = bims.filter(v => v !== null).length;
+    const restantes = 4 - lancados;
+
+    if (restantes === 0) {
+      // Sem bimestres restantes — reprovado definitivo
+      if (sit === 'Reprovado') {
+        viabRows.push({ nome: r.ESTUDANTE, turma: r.TURMA, disc: r.DISCIPLINA, mediaAtual: media, notaNecessaria: null, impossivel: true });
+      }
+      return;
+    }
+
+    // Calcular nota necessária por bimestre para atingir média 5.0
+    // (soma atual + restantes × X) / 4 >= 5.0
+    const somaAtual = bims.filter(v => v !== null).reduce((a, b) => a + b, 0);
+    const somaNecess = CFG.mediaAprov * 4;
+    const somaRestante = somaNecess - somaAtual;
+    const notaPorBim = somaRestante / restantes;
+
+    if (notaPorBim > 10) {
+      viabRows.push({ nome: r.ESTUDANTE, turma: r.TURMA, disc: r.DISCIPLINA, mediaAtual: media, notaNecessaria: notaPorBim, restantes, impossivel: true });
+    } else if (notaPorBim > 8.5) {
+      viabRows.push({ nome: r.ESTUDANTE, turma: r.TURMA, disc: r.DISCIPLINA, mediaAtual: media, notaNecessaria: notaPorBim, restantes, impossivel: false, dificil: true });
+    } else if (notaPorBim > 0) {
+      viabRows.push({ nome: r.ESTUDANTE, turma: r.TURMA, disc: r.DISCIPLINA, mediaAtual: media, notaNecessaria: notaPorBim, restantes, impossivel: false, dificil: false });
+    }
+  });
+
+  if (!viabRows.length) {
+    bodyViab.innerHTML = `<div class="radar-alerta radar-alerta-ok"><div class="radar-alerta-icon">✅</div>
+      <div class="radar-alerta-body"><div class="radar-alerta-titulo">Nenhum aluno em situação de risco de recuperação no filtro atual</div></div></div>`;
+    return;
+  }
+
+  // Agrupar em 3 níveis
+  const impossiveis = viabRows.filter(v => v.impossivel);
+  const dificeis = viabRows.filter(v => !v.impossivel && v.dificil);
+  const possiveis = viabRows.filter(v => !v.impossivel && !v.dificil);
+
+  function viabRow(v) {
+    const notaStr = v.notaNecessaria === null ? 'Reprovado (sem bimestres restantes)' :
+      v.notaNecessaria > 10 ? `${v.notaNecessaria.toFixed(1).replace('.',',')} (impossível — acima de 10,0)` :
+      `${v.notaNecessaria.toFixed(1).replace('.',',')} em cada bimestre restante (${v.restantes} restante${v.restantes > 1 ? 's' : ''})`;
+    return `<tr>
+      <td><strong>${v.nome}</strong></td>
+      <td><span class="badge b-info">${v.turma}</span></td>
+      <td style="font-size:12px;">${v.disc}</td>
+      <td>${fmtMedia(v.mediaAtual, true)}</td>
+      <td style="font-size:12px;${v.impossivel ? 'color:var(--verm);font-weight:600;' : v.dificil ? 'color:var(--amber);font-weight:600;' : 'color:var(--verde);'}">${notaStr}</td>
+      <td>${v.impossivel
+        ? `<span class="badge b-re"><i class="bi bi-x-circle-fill"></i> Intervenção externa</span>`
+        : v.dificil
+          ? `<span class="badge b-al"><i class="bi bi-exclamation-triangle-fill"></i> Recuperação difícil</span>`
+          : `<span class="badge b-ap"><i class="bi bi-check-circle-fill"></i> Recuperação viável</span>`
+      }</td>
+    </tr>`;
+  }
+
+  const allRows = [...impossiveis, ...dificeis, ...possiveis];
+
+  bodyViab.innerHTML = `
+    <div class="ib" style="margin-bottom:14px;">
+      <i class="bi bi-info-circle-fill"></i>
+      <span>Cálculo baseado na nota mínima necessária em cada bimestre restante para atingir média ${CFG.mediaAprov.toFixed(1).replace('.',',')}. "Intervenção externa" significa que a média já não pode ser atingida matematicamente nas avaliações regulares.</span>
+    </div>
+    ${impossiveis.length ? `<div style="font-size:12px;font-weight:700;color:var(--verm);margin-bottom:6px;"><i class="bi bi-x-circle-fill"></i> Recuperação Improvável — Necessita Intervenção Externa (${impossiveis.length})</div>` : ''}
+    <div class="tw"><table>
+      <thead><tr><th>Aluno</th><th>Turma</th><th>Disciplina</th><th>Média atual</th><th>Nota necessária</th><th>Viabilidade</th></tr></thead>
+      <tbody>${allRows.map(viabRow).join('')}</tbody>
+    </table></div>`;
+}
+
 // ── DEMO ───────────────────────────────────────────────────
 function carregarDemo(){
   const nomes=[
@@ -1633,6 +2680,19 @@ function limpar(){
   document.getElementById('nav-discs').innerHTML='';
   document.getElementById('status-up').innerHTML='';
   document.getElementById('inp-p').value='';
+  // Reset accordion counts and state
+  ['acc-turmas','acc-discs'].forEach(id => {
+    const acc = document.getElementById(id);
+    if (!acc) return;
+    const toggle = acc.querySelector('.sb-acc-toggle');
+    const body = acc.querySelector('.sb-acc-body');
+    if (toggle) { toggle.classList.remove('open'); toggle.setAttribute('aria-expanded','false'); }
+    if (body) body.classList.remove('open');
+  });
+  const countT = document.getElementById('acc-turmas-count');
+  const countD = document.getElementById('acc-discs-count');
+  if (countT) { countT.textContent = ''; countT.classList.remove('visible'); }
+  if (countD) { countD.textContent = ''; countD.classList.remove('visible'); }
   showSection('upload');
 }
 

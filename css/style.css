@@ -26,11 +26,48 @@ body{font-family:'Outfit',sans-serif;background:#f0f4f8;color:#111827;min-height
 
 /* ── SIDEBAR ──────────────────────────────────────────── */
 #sidebar{
-  width:var(--sw);min-height:100vh;background:#0f172a;
-  display:flex;flex-direction:column;padding-bottom:24px;
-  position:fixed;left:0;top:0;bottom:0;overflow-y:auto;
+  width:var(--sw);height:100vh;background:#0f172a;
+  display:flex;flex-direction:column;
+  position:fixed;left:0;top:0;bottom:0;overflow:hidden;
   z-index:100;transition:transform .25s ease;
 }
+/* Wrapper scrollável — só a área de navegação rola */
+.sb-scroll{
+  flex:1;overflow-y:auto;overflow-x:hidden;
+  display:flex;flex-direction:column;
+  padding-bottom:24px;
+  scrollbar-width:thin;scrollbar-color:#334155 transparent;
+}
+.sb-scroll::-webkit-scrollbar{width:4px;}
+.sb-scroll::-webkit-scrollbar-thumb{background:#334155;border-radius:2px;}
+
+/* ── ACCORDION SIDEBAR ─────────────────────────────── */
+.sb-accordion{border-bottom:1px solid rgba(255,255,255,.05);}
+.sb-acc-toggle{
+  width:100%;display:flex;align-items:center;gap:8px;
+  padding:9px 18px;font-size:11px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.08em;color:#475569;
+  background:none;border:none;cursor:pointer;text-align:left;
+  transition:background .15s,color .15s;
+}
+.sb-acc-toggle:hover{background:rgba(255,255,255,.04);color:#64748b;}
+.sb-acc-toggle.open{color:#7dd3fc;}
+.sb-acc-label{display:flex;align-items:center;gap:7px;flex:1;}
+.sb-acc-label i{font-size:13px;width:15px;flex-shrink:0;}
+.sb-acc-count{
+  font-size:10px;font-weight:700;background:rgba(255,255,255,.1);
+  color:#94a3b8;padding:1px 7px;border-radius:99px;
+  min-width:22px;text-align:center;flex-shrink:0;
+  display:none;
+}
+.sb-acc-count.visible{display:block;}
+.sb-acc-arrow{font-size:11px;transition:transform .2s ease;flex-shrink:0;color:#475569;}
+.sb-acc-toggle.open .sb-acc-arrow{transform:rotate(180deg);}
+.sb-acc-body{
+  max-height:0;overflow:hidden;
+  transition:max-height .28s cubic-bezier(.4,0,.2,1);
+}
+.sb-acc-body.open{max-height:600px;}
 .sb-header{display:flex;align-items:center;gap:12px;padding:20px 18px 16px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:6px;}
 .sb-logo{width:36px;height:36px;background:var(--azul);border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;flex-shrink:0;}
 .sb-title{font-size:13px;font-weight:600;color:#f1f5f9;line-height:1.3;}
@@ -38,7 +75,7 @@ body{font-family:'Outfit',sans-serif;background:#f0f4f8;color:#111827;min-height
 .sb-close{display:none;margin-left:auto;background:none;border:none;color:#64748b;font-size:20px;cursor:pointer;padding:2px 6px;border-radius:6px;line-height:1;}
 .sb-close:hover{background:rgba(255,255,255,.08);color:#e2e8f0;}
 .sb-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#475569;padding:12px 18px 5px;}
-.sb-label.mt{margin-top:auto;}
+.sb-label.mt{margin-top:8px;border-top:1px solid rgba(255,255,255,.05);padding-top:14px;}
 #sidebar .nav-link{display:flex;align-items:center;gap:10px;padding:8px 18px;font-size:13px;color:#94a3b8;cursor:pointer;border:none;background:none;width:100%;text-align:left;text-decoration:none;transition:background .15s,color .15s;}
 #sidebar .nav-link:hover{background:rgba(255,255,255,.06);color:#e2e8f0;}
 #sidebar .nav-link.active{background:rgba(26,86,219,.25);color:#93c5fd;font-weight:500;}
@@ -469,4 +506,348 @@ select:focus,input[type=text]:focus{border-color:var(--azul);box-shadow:0 0 0 3p
   #lgpd-banner,#lgpd-modal{display:none!important;}
   #main{margin-left:0;}
   .card{box-shadow:none;}
+}
+
+
+/* ══════════════════════════════════════════════════════
+   PPTX — Botão, configuração e prévia
+   ══════════════════════════════════════════════════════ */
+
+/* Botão principal PPTX — identidade roxa */
+.btn-pptx {
+  background: linear-gradient(135deg, var(--roxo), var(--roxo-esc));
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 8px rgba(108,43,217,.3);
+  transition: all .18s;
+}
+.btn-pptx:hover {
+  background: linear-gradient(135deg, var(--roxo-esc), #3b0764);
+  box-shadow: 0 4px 14px rgba(108,43,217,.45);
+  transform: translateY(-1px);
+  color: #fff;
+}
+.btn-pptx.btn-lg {
+  padding: 10px 22px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Grid de configuração do PPTX */
+.pptx-config-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+@media (max-width: 768px) {
+  .pptx-config-grid { grid-template-columns: 1fr; }
+}
+
+.pptx-config-bloco {
+  background: var(--cinza-cl);
+  border-radius: var(--r);
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+}
+
+.pptx-config-titulo {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--cinza-esc);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+/* Box de prévia do relatório */
+.pptx-preview-box {
+  background: #fff;
+  border: 2px solid var(--roxo-cl);
+  border-radius: var(--r);
+  padding: 16px;
+  min-height: 120px;
+}
+
+.pptx-preview-icon {
+  font-size: 26px;
+  color: var(--roxo);
+  margin-bottom: 6px;
+}
+
+.pptx-preview-titulo {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--roxo-esc);
+  margin-bottom: 4px;
+}
+
+.pptx-preview-desc {
+  font-size: 11px;
+  color: var(--cinza);
+  margin-bottom: 10px;
+}
+
+.pptx-preview-slides {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 130px;
+  overflow-y: auto;
+}
+
+.pptx-slide-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--cinza-esc);
+  padding: 3px 0;
+  border-bottom: 1px dashed #e9d5ff;
+}
+.pptx-slide-item:last-child { border-bottom: none; }
+
+.pptx-slide-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--roxo);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════════════════
+   RADAR PREDITIVO — Centro de Inteligência Pedagógica
+   ══════════════════════════════════════════════════════ */
+
+/* Hero header da seção */
+.radar-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  border-radius: var(--rl);
+  padding: 18px 22px;
+  margin-bottom: 20px;
+  border: 1px solid #334155;
+}
+.radar-hero-icon {
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #c2410c, #ea580c);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #fff;
+  flex-shrink: 0;
+}
+.radar-hero-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin-bottom: 3px;
+}
+.radar-hero-sub {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+/* Alertas de discrepância */
+.radar-alerta {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  border-radius: var(--r);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  border-left: 4px solid;
+}
+.radar-alerta:last-child { margin-bottom: 0; }
+
+.radar-alerta-disc {
+  background: #fff7ed;
+  border-color: #f97316;
+}
+.radar-alerta-risco {
+  background: var(--verm-cl);
+  border-color: var(--verm);
+}
+.radar-alerta-ok {
+  background: var(--verde-cl);
+  border-color: var(--verde);
+}
+.radar-alerta-info {
+  background: var(--azul-cl);
+  border-color: var(--azul);
+}
+
+.radar-alerta-icon {
+  font-size: 20px;
+  line-height: 1.3;
+  flex-shrink: 0;
+}
+.radar-alerta-body { flex: 1; min-width: 0; }
+
+.radar-alerta-titulo {
+  font-size: 13px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 5px;
+}
+.radar-alerta-desc {
+  font-size: 12px;
+  color: var(--cinza-esc);
+  line-height: 1.65;
+  margin-bottom: 8px;
+}
+
+/* Lista de alunos dentro dos alertas */
+.radar-alerta-alunos { margin-top: 8px; }
+.radar-alunos-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--cinza-esc);
+  display: block;
+  margin-bottom: 6px;
+}
+.radar-alunos-lista {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.radar-aluno-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 99px;
+  display: inline-block;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.radar-tag-amber {
+  background: var(--amber-cl);
+  color: var(--amber-esc);
+}
+.radar-tag-verm {
+  background: var(--verm-cl);
+  color: var(--verm-esc);
+}
+.radar-tag-azul {
+  background: var(--azul-cl);
+  color: var(--azul-esc);
+}
+
+/* Cards de perfis de risco individual */
+.radar-perfil-card {
+  border-radius: var(--rl);
+  border: 1px solid;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.radar-perfil-amber {
+  background: #fffbeb;
+  border-color: #fcd34d;
+}
+.radar-perfil-azul {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+.radar-perfil-verm {
+  background: var(--verm-cl);
+  border-color: #fca5a5;
+}
+
+.radar-perfil-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(0,0,0,.06);
+}
+.radar-perfil-emoji {
+  font-size: 22px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.radar-perfil-titulo {
+  font-size: 13px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.3;
+}
+.radar-perfil-desc {
+  font-size: 11px;
+  color: var(--cinza);
+  margin-top: 1px;
+}
+
+.radar-perfil-lista {
+  padding: 10px 14px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.radar-perfil-item {
+  padding: 7px 10px;
+  background: rgba(255,255,255,.7);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  border: 1px solid rgba(0,0,0,.06);
+}
+.radar-perfil-item strong {
+  display: block;
+  font-weight: 700;
+  color: #111827;
+  font-size: 12px;
+}
+.radar-perfil-detalhe {
+  font-size: 11px;
+  color: var(--cinza);
+  font-weight: 400;
+}
+.radar-perfil-vazio {
+  font-size: 12px;
+  color: var(--cinza);
+  text-align: center;
+  padding: 16px 0;
+  font-style: italic;
+}
+
+/* Responsividade do grid de perfis */
+@media (max-width: 900px) {
+  #radar-perfis-grid.g3 {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 768px) {
+  .radar-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 16px;
+  }
+  .radar-alerta {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .radar-perfil-lista {
+    max-height: 200px;
+  }
 }
