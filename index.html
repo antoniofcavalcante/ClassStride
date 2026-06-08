@@ -1,679 +1,757 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Conselho de Classe — Ensino Médio</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
-<link rel="stylesheet" href="css/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conselho de Classe — Dashboard</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- CDN Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.3/dist/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
+  <!-- Skip Link -->
+  <a href="#main-content" class="skip-link">Pular para o conteúdo principal</a>
 
-<!-- LOADER -->
-<div id="loader" style="display:none;">
-  <div class="spin"></div>
-  <p id="loader-msg">Carregando...</p>
-</div>
+  <!-- Sidebar Overlay (mobile) -->
+  <div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
 
-<!-- OVERLAY MOBILE -->
-<div id="sb-overlay" onclick="fecharSidebar()"></div>
-
-<!-- SIDEBAR -->
-<nav id="sidebar">
-  <div class="sb-header">
-    <div class="sb-logo"><i class="bi bi-mortarboard-fill"></i></div>
-    <div>
-      <div class="sb-title">Conselho de Classe</div>
-      <div class="sb-sub">Ensino Médio</div>
-    </div>
-    <button class="sb-close" onclick="fecharSidebar()" aria-label="Fechar menu">×</button>
-  </div>
-  <div class="sb-scroll">
-    <div class="sb-label">Início</div>
-    <a class="nav-link active" data-s="upload" onclick="showSection('upload')"><i class="bi bi-cloud-upload"></i> Importar dados</a>
-    <a class="nav-link" data-s="geral" onclick="showSection('geral')"><i class="bi bi-grid-3x3-gap"></i> Painel geral</a>
-    <a class="nav-link" data-s="medalhas" onclick="showSection('medalhas')"><i class="bi bi-trophy-fill"></i> Medalhistas</a>
-    <a class="nav-link" data-s="digital" onclick="showSection('digital')"><i class="bi bi-laptop"></i> Material Digital</a>
-    <a class="nav-link" data-s="radar" onclick="showSection('radar')"><i class="bi bi-radar"></i> Radar Preditivo</a>
-
-    <div class="sb-accordion" id="acc-turmas">
-      <button class="sb-acc-toggle" onclick="toggleAcc('acc-turmas')" aria-expanded="false">
-        <span class="sb-acc-label"><i class="bi bi-people-fill"></i> Por Turma</span>
-        <span class="sb-acc-count" id="acc-turmas-count"></span>
-        <i class="bi bi-chevron-down sb-acc-arrow"></i>
-      </button>
-      <div class="sb-acc-body" id="nav-turmas"></div>
+  <div id="app">
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar" role="navigation" aria-label="Navegação principal">
+    <div class="sidebar-brand">
+      <div class="sidebar-brand-icon">
+        <i class="bi bi-mortarboard-fill"></i>
+      </div>
+      <h1>Conselho<span>de Classe</span></h1>
     </div>
 
-    <div class="sb-accordion" id="acc-discs">
-      <button class="sb-acc-toggle" onclick="toggleAcc('acc-discs')" aria-expanded="false">
-        <span class="sb-acc-label"><i class="bi bi-journal-bookmark-fill"></i> Por Disciplina</span>
-        <span class="sb-acc-count" id="acc-discs-count"></span>
-        <i class="bi bi-chevron-down sb-acc-arrow"></i>
-      </button>
-      <div class="sb-acc-body" id="nav-discs"></div>
+    <nav class="sidebar-nav">
+      <div class="sidebar-nav-title">Dados</div>
+      <a href="#importar" data-section="importar" class="active">
+        <i class="bi bi-upload"></i> Importar Dados
+      </a>
+
+      <div class="sidebar-nav-title">Dashboards</div>
+      <a href="#geral" data-section="geral">
+        <i class="bi bi-grid-1x2-fill"></i> Painel Geral
+      </a>
+      <a href="#turma" data-section="turma">
+        <i class="bi bi-people-fill"></i> Por Turma
+      </a>
+      <a href="#disciplina" data-section="disciplina">
+        <i class="bi bi-book-fill"></i> Por Disciplina
+      </a>
+      <a href="#area" data-section="area">
+        <i class="bi bi-diagram-3-fill"></i> Por Área
+      </a>
+      <a href="#medalhistas" data-section="medalhistas">
+        <i class="bi bi-trophy-fill"></i> Medalhistas
+      </a>
+
+      <div class="sidebar-nav-title">Análises</div>
+      <a href="#digital" data-section="digital">
+        <i class="bi bi-laptop-fill"></i> Material Digital
+      </a>
+      <a href="#radar" data-section="radar">
+        <i class="bi bi-bullseye"></i> Radar Preditivo
+      </a>
+
+      <div class="sidebar-nav-title">Sistema</div>
+      <a href="#configuracoes" data-section="configuracoes">
+        <i class="bi bi-sliders"></i> Configurações
+      </a>
+      <a href="#relatorios" data-section="relatorios">
+        <i class="bi bi-file-earmark-pdf-fill"></i> Relatórios PDF
+      </a>
+      <a href="#apresentacoes" data-section="apresentacoes">
+        <i class="bi bi-file-earmark-ppt-fill"></i> Apresentações
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span id="sidebar-school-name">E.E. Prof.ª Célia Vasques Ferrari Duch</span>
     </div>
+  </aside>
 
-    <div class="sb-label mt">Ferramentas</div>
-    <a class="nav-link" data-s="relatorios" onclick="showSection('relatorios')"><i class="bi bi-file-earmark-pdf"></i> Relatórios PDF</a>
-    <a class="nav-link" data-s="pptx" onclick="showSection('pptx')"><i class="bi bi-file-earmark-slides"></i> Apresentação PPTX</a>
-    <a class="nav-link" onclick="limpar()" style="cursor:pointer"><i class="bi bi-arrow-counterclockwise"></i> Limpar dados</a>
-  </div>
-</nav>
-
-<!-- MAIN -->
-<div id="main">
-  <div class="topbar">
-    <button class="topbar-menu-btn" onclick="abrirSidebar()" aria-label="Abrir menu"><i class="bi bi-list"></i></button>
-    <div style="flex:1;min-width:0;">
-      <div class="tb-title" id="tb-title">Importar dados</div>
-      <div class="tb-sub" id="tb-sub">Selecione os arquivos para começar</div>
-    </div>
-    <div class="btn-group" id="tb-actions">
-      <button class="btn btn-pptx" id="btn-pptx-topbar" style="display:none;" onclick="showSection('pptx')">
-        <i class="bi bi-file-earmark-slides"></i> Gerar PPTX
-      </button>
-    </div>
-  </div>
-
-  <div class="content">
-
-    <!-- ══ UPLOAD ══ -->
-    <div id="section-upload" class="section active">
-      <div class="card" style="margin-bottom:20px;">
-        <div class="card-head">
-          <div class="ch-icon" style="background:#eff6ff;color:var(--azul);"><i class="bi bi-cloud-upload"></i></div>
-          <h2>Importar planilhas</h2>
-        </div>
-        <div class="card-body">
-          <p style="font-size:13px;color:var(--cinza);margin-bottom:14px;">
-            Selecione <strong>um ou vários arquivos</strong> de uma vez. Cada arquivo deve ter as abas
-            <strong>Notas</strong>, <strong>FALTAS</strong> e opcionalmente <strong>DIGITAL</strong>.
-            O sistema lê e cruza as abas automaticamente.
-          </p>
-          <div class="uz" id="uz-p" onclick="document.getElementById('inp-p').click()">
-            <input type="file" id="inp-p" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="handleUpload(this)">
-            <div ondragover="dragOver(event,'uz-p')" ondragleave="dragLeave('uz-p')" ondrop="drop(event,'uz-p')">
-              <i class="bi bi-file-earmark-spreadsheet uz-icon"></i>
-              <div class="uz-title">Arraste ou clique para selecionar</div>
-              <div class="uz-sub">Um arquivo por professor, ou vários de uma vez para a coordenação</div>
-              <div class="uz-fmt">.xlsx · .xls · .csv &nbsp;·&nbsp; múltiplos arquivos permitidos</div>
-            </div>
-          </div>
-          <div id="status-up" style="margin-top:10px;font-size:13px;"></div>
-        </div>
+  <!-- Main -->
+  <div class="main" id="main">
+    <!-- Topbar -->
+    <header class="topbar" role="banner">
+      <div class="topbar-left">
+        <button class="menu-toggle" id="menu-toggle" aria-label="Abrir menu" aria-expanded="false">
+          <i class="bi bi-list"></i>
+        </button>
+        <h2 class="topbar-title" id="topbar-title">Importar Dados</h2>
       </div>
+      <div class="topbar-right">
+        <input type="search" id="search-aluno" class="form-input" placeholder="🔍 Buscar aluno..." style="width: 200px; min-height: 32px; font-size: var(--text-sm);">
+        <button class="btn btn-ghost btn-icon" id="btn-fullscreen" title="Modo apresentação" aria-label="Alternar modo apresentação">
+          <i class="bi bi-arrows-fullscreen"></i>
+        </button>
+        <span class="text-sm text-muted" id="topbar-status">Nenhum dado carregado</span>
+      </div>
+    </header>
 
-      <div class="card">
-        <div class="card-head">
-          <div class="ch-icon" style="background:#fef3c7;color:var(--amber);"><i class="bi bi-lightbulb"></i></div>
-          <h2>Formato esperado da planilha</h2>
-        </div>
-        <div class="card-body">
-          <div class="ib">
-            <i class="bi bi-info-circle-fill"></i>
-            <span>A planilha deve ter <strong>duas ou três abas</strong>: <strong>Notas</strong>, <strong>FALTAS</strong> e (opcional) <strong>DIGITAL</strong>.
-            O sistema cruza as abas pelo trio ESTUDANTE + TURMA + DISCIPLINA. Colunas calculadas (Média, Situação, % Presença) são ignoradas — o dashboard recalcula tudo.</span>
+    <!-- Content -->
+    <main class="content" id="main-content">
+
+      <!-- ================================================================ -->
+      <!-- Seção: Importar Dados -->
+      <!-- ================================================================ -->
+      <section class="section active" id="section-importar" data-section="importar">
+        <div class="upload-grid">
+          <!-- Mapão Dropzone -->
+          <div id="dropzone-mapa" class="dropzone" role="button" tabindex="0"
+               aria-label="Fazer upload de arquivos Mapão">
+            <div class="dropzone-icon"><i class="bi bi-file-earmark-spreadsheet"></i></div>
+            <h3>Mapões (.xlsx)</h3>
+            <p>Arraste os arquivos de mapa de notas ou clique para selecionar</p>
+            <input type="file" id="input-mapa" accept=".xlsx,.xls" multiple hidden>
           </div>
 
-          <p style="font-size:12px;font-weight:600;color:var(--cinza-esc);margin-bottom:8px;">Aba <strong>Notas</strong></p>
-          <div class="tw" style="margin-bottom:16px;">
-            <table>
-              <thead><tr><th>ESTUDANTE</th><th>TURMA</th><th>DISCIPLINA</th><th>NOTA 1º BIMESTRE</th><th>NOTA 2º BIMESTRE</th><th>NOTA 3º BIMESTRE</th><th>NOTA 4º BIMESTRE</th></tr></thead>
-              <tbody><tr><td>ALEXIA RAISSA ALMEIDA ALVES</td><td>2ªA</td><td>MATEMÁTICA</td><td class="nota n-ok">7</td><td class="nota n-ok">7</td><td class="nota n-re">4</td><td class="nota n-ne">—</td></tr></tbody>
-            </table>
+          <!-- Digital Dropzone -->
+          <div id="dropzone-digital" class="dropzone" role="button" tabindex="0"
+               aria-label="Fazer upload da planilha de aulas digitais">
+            <div class="dropzone-icon"><i class="bi bi-file-earmark-bar-graph"></i></div>
+            <h3>Aulas Digitais (.xlsx)</h3>
+            <p>Arraste a planilha de aulas digitais ou clique para selecionar</p>
+            <input type="file" id="input-digital" accept=".xlsx,.xls" hidden>
           </div>
 
-          <p style="font-size:12px;font-weight:600;color:var(--cinza-esc);margin-bottom:8px;">Aba <strong>FALTAS</strong></p>
-          <div class="tw" style="margin-bottom:16px;">
-            <table>
-              <thead><tr><th>ESTUDANTE</th><th>TURMA</th><th>DISCIPLINA</th><th>AULAS 1º BIM</th><th>FALTAS 1º BIM</th><th>AULAS 2º BIM</th><th>FALTAS 2º BIM</th><th>AULAS 3º BIM</th><th>FALTAS 3º BIM</th><th>AULAS 4º BIM</th><th>FALTAS 4º BIM</th></tr></thead>
-              <tbody><tr><td>ALEXIA RAISSA ALMEIDA ALVES</td><td>2ªA</td><td>MATEMÁTICA</td><td>38</td><td class="nota n-ok">0</td><td>40</td><td class="nota n-ok">2</td><td>39</td><td class="nota n-re">11</td><td class="nota n-ne">—</td><td class="nota n-ne">—</td></tr></tbody>
-            </table>
-          </div>
-
-          <p style="font-size:12px;font-weight:600;color:var(--cinza-esc);margin-bottom:8px;">Aba <strong>DIGITAL</strong> — opcional, por turma/disciplina</p>
-          <div class="tw" style="margin-bottom:16px;">
-            <table>
-              <thead><tr><th>TURMA</th><th>DISCIPLINA</th><th>PREVISTO 1º BIM</th><th>CONCLUIDO 1º BIM</th><th>PREVISTO 2º BIM</th><th>CONCLUIDO 2º BIM</th><th>PREVISTO 3º BIM</th><th>CONCLUIDO 3º BIM</th><th>PREVISTO 4º BIM</th><th>CONCLUIDO 4º BIM</th></tr></thead>
-              <tbody><tr><td>2ªA</td><td>MATEMÁTICA</td><td>10</td><td>10</td><td>10</td><td>8</td><td>10</td><td>5</td><td>10</td><td class="nota n-ne">—</td></tr></tbody>
-            </table>
-          </div>
-
-          <div class="btn-group">
-            <button class="btn btn-outline btn-sm" onclick="baixarModelo()"><i class="bi bi-download"></i> Baixar modelo .xlsx</button>
-            <button class="btn btn-primary btn-sm" onclick="carregarDemo()"><i class="bi bi-play-circle"></i> Ver com dados de exemplo</button>
+          <!-- Bimestre Anterior Dropzone -->
+          <div id="dropzone-anterior" class="dropzone" role="button" tabindex="0"
+               aria-label="Fazer upload de mapões do bimestre anterior" style="grid-column: 1 / -1;">
+            <div class="dropzone-icon"><i class="bi bi-arrow-left-right"></i></div>
+            <h3>Mapão Bimestre Anterior (.xlsx)</h3>
+            <p>Arraste os mapões do bimestre anterior para comparar evolução</p>
+            <input type="file" id="input-anterior" accept=".xlsx,.xls" multiple hidden>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- ══ PAINEL GERAL ══ -->
-    <div id="section-geral" class="section">
-      <div class="mg" id="mg-geral"></div>
+        <!-- Upload Errors -->
+        <div id="upload-errors" class="hidden mt-4" role="alert"></div>
 
-      <!-- [Fase 2] Métricas de frequência do painel geral — será populado em renderGeral() -->
-      <div class="mg" id="mg-freq-geral" style="display:none;margin-top:-8px;"></div>
-
-      <div class="g2">
-        <div class="card">
-          <div class="card-head">
-            <div class="ch-icon" style="background:#eff6ff;color:var(--azul);"><i class="bi bi-bar-chart-fill"></i></div>
-            <h2>Situação por turma</h2>
-          </div>
-          <div class="card-body"><div class="chart-box" style="height:270px;"><canvas id="ch-sit-turmas"></canvas></div></div>
-        </div>
-        <div class="card">
-          <div class="card-head">
-            <div class="ch-icon" style="background:#f0fdf4;color:var(--verde);"><i class="bi bi-graph-up"></i></div>
-            <h2>Média por disciplina</h2>
-          </div>
-          <div class="card-body"><div class="chart-box" style="height:270px;"><canvas id="ch-media-disc"></canvas></div></div>
-        </div>
-      </div>
-
-      <!-- Gráfico de frequência por turma -->
-      <div class="card" id="card-freq-geral">
-        <div class="card-head">
-          <div class="ch-icon" style="background:#fff7ed;color:#f97316;"><i class="bi bi-calendar-check"></i></div>
-          <h2>Frequência média por turma</h2>
-          <span class="badge b-al" style="margin-left:auto;font-size:10px;">mínimo 75%</span>
-        </div>
-        <div class="card-body"><div class="chart-box" style="height:200px;"><canvas id="ch-freq-turmas"></canvas></div></div>
-      </div>
-
-      <!-- Gráfico Material Digital no Painel Geral -->
-      <div class="card" id="card-digital-geral" style="display:none;">
-        <div class="card-head">
-          <div class="ch-icon" style="background:var(--roxo-cl);color:var(--roxo);"><i class="bi bi-laptop"></i></div>
-          <h2>Cumprimento do Material Digital por disciplina</h2>
-        </div>
-        <div class="card-body"><div class="chart-box" style="height:220px;"><canvas id="ch-digital-geral"></canvas></div></div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <div class="ch-icon" style="background:#fef3c7;color:var(--amber);"><i class="bi bi-table"></i></div>
-          <h2>Resumo por turma</h2>
-        </div>
-        <div class="card-body">
-          <div class="tw">
-            <table>
-              <thead><tr><th>Turma</th><th>Alunos</th><th>Aprovados</th><th>Reprovados</th><th>Alerta freq.</th><th>Freq. crítica</th><th>Freq. média</th><th>Média geral</th></tr></thead>
-              <tbody id="tb-resumo"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ══ VISÃO TURMA ══ -->
-    <div id="section-turma" class="section">
-      <div class="mg" id="mg-turma"></div>
-      <div class="g2">
-        <div class="card">
-          <div class="card-head">
-            <div class="ch-icon" style="background:#eff6ff;color:var(--azul);"><i class="bi bi-bar-chart-fill"></i></div>
-            <h2>Média por disciplina</h2>
-          </div>
-          <div class="card-body"><div class="chart-box" style="height:240px;"><canvas id="ch-turma-disc"></canvas></div></div>
-        </div>
-        <div class="card">
-          <div class="card-head">
-            <div class="ch-icon" style="background:#f0fdf4;color:var(--verde);"><i class="bi bi-pie-chart-fill"></i></div>
-            <h2>Situação geral</h2>
-          </div>
-          <div class="card-body"><div class="chart-box" style="height:240px;"><canvas id="ch-turma-sit"></canvas></div></div>
-        </div>
-      </div>
-
-      <!-- Material Digital da turma -->
-      <div id="digital-turma-section" class="card" style="display:none;">
-        <div class="card-head">
-          <div class="ch-icon" style="background:var(--roxo-cl);color:var(--roxo);"><i class="bi bi-laptop"></i></div>
-          <h2>Material Digital desta turma</h2>
-        </div>
-        <div class="card-body" id="digital-turma-body"></div>
-      </div>
-
-      <!-- Lista de alunos da turma -->
-      <div class="card">
-        <div class="card-head">
-          <div class="ch-icon" style="background:#fef3c7;color:var(--amber);"><i class="bi bi-people-fill"></i></div>
-          <h2 id="titulo-alunos">Alunos</h2>
-          <div class="filtros-row" style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <select id="filtro-disc-turma" onchange="renderTurmaComFiltro()" style="font-size:12px;padding:5px 8px;"></select>
-            <select id="filtro-sit" onchange="renderAlunos()" style="font-size:12px;padding:5px 8px;">
-              <option value="">Todas situações</option>
-              <option value="Aprovado">Aprovado</option>
-              <option value="Reprovado">Reprovado</option>
-              <option value="Alerta freq.">Alerta frequência</option>
-              <option value="Risco combinado">Risco combinado</option>
-            </select>
-            <input type="text" id="busca" placeholder="Buscar aluno..." style="font-size:12px;padding:5px 8px;width:160px;" oninput="renderAlunos()">
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="tw">
-            <table>
-              <thead id="thead-alunos">
-                <tr>
-                  <th>Aluno</th><th>Disciplina</th>
-                  <th>B1</th><th>B2</th><th>B3</th><th>B4</th>
-                  <th>Evolução</th><th>Média</th><th>Frequência</th><th>Situação</th>
-                </tr>
-              </thead>
-              <tbody id="tb-alunos"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ══ VISÃO DISCIPLINA ══ -->
-    <div id="section-disc" class="section">
-      <div class="mg" id="mg-disc"></div>
-      <div class="g2" style="margin-bottom:0;">
-        <div class="card">
-          <div class="card-head">
-            <div class="ch-icon" style="background:#eff6ff;color:var(--azul);"><i class="bi bi-graph-up-arrow"></i></div>
-            <h2>Evolução bimestral</h2>
-          </div>
-          <div class="card-body"><div class="chart-box" style="height:240px;"><canvas id="ch-disc-evol"></canvas></div></div>
-        </div>
-        <div class="card">
-          <div class="card-head">
-            <div class="ch-icon" style="background:#f0fdf4;color:var(--verde);"><i class="bi bi-bar-chart-fill"></i></div>
-            <h2>Distribuição de notas</h2>
-          </div>
-          <div class="card-body"><div class="chart-box" style="height:240px;"><canvas id="ch-disc-dist"></canvas></div></div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:18px;">
-        <div class="card-head">
-          <div class="ch-icon" style="background:#fff7ed;color:#c2410c;"><i class="bi bi-exclamation-triangle-fill"></i></div>
-          <h2>Intervenções sugeridas <span id="iv-turma-label" style="font-size:12px;font-weight:400;color:var(--cinza);"></span></h2>
-        </div>
-        <div class="card-body" id="div-iv"></div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <div class="ch-icon" style="background:#fef3c7;color:var(--amber);"><i class="bi bi-journal-bookmark-fill"></i></div>
-          <h2 id="titulo-disc">Disciplina</h2>
-          <div style="margin-left:auto;">
-            <select id="filtro-turma-disc" onchange="onFiltroTurmaDisc()" style="font-size:12px;padding:5px 8px;">
-              <option value="">Todas as turmas</option>
-            </select>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="tw">
-            <table>
-              <thead><tr><th>Aluno</th><th>Turma</th><th>B1</th><th>B2</th><th>B3</th><th>B4</th><th>Média</th><th>Frequência</th><th>Situação</th><th>Alerta</th></tr></thead>
-              <tbody id="tb-disc"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ══ MEDALHISTAS ══ -->
-    <div id="section-medalhas" class="section">
-      <div class="mg" id="mg-medalhas"></div>
-      <div class="card" style="margin-bottom:18px;">
-        <div class="card-head">
-          <div class="ch-icon" style="background:#fef3c7;color:var(--amber);"><i class="bi bi-funnel-fill"></i></div>
-          <h2>Filtros</h2>
-          <select id="filtro-turma-medalhas" onchange="renderMedalhas()" style="font-size:12px;padding:5px 8px;margin-left:auto;"></select>
-        </div>
-      </div>
-      <div id="medalhas-content"></div>
-    </div>
-
-    <!-- ══ MATERIAL DIGITAL ══ -->
-    <div id="section-digital" class="section">
-      <div class="mg" id="mg-digital"></div>
-      <div class="card" style="margin-bottom:18px;">
-        <div class="card-head">
-          <div class="ch-icon" style="background:var(--roxo-cl);color:var(--roxo);"><i class="bi bi-funnel-fill"></i></div>
-          <h2>Filtros</h2>
-          <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">
-            <select id="filtro-digital-turma" onchange="renderDigital()" style="font-size:12px;padding:5px 8px;"></select>
-            <select id="filtro-digital-disc" onchange="renderDigital()" style="font-size:12px;padding:5px 8px;"></select>
-          </div>
-        </div>
-      </div>
-      <div class="card" id="card-digital-disc-chart">
-        <div class="card-head">
-          <div class="ch-icon" style="background:var(--roxo-cl);color:var(--roxo);"><i class="bi bi-bar-chart-fill"></i></div>
-          <h2>% Cumprimento por disciplina</h2>
-        </div>
-        <div class="card-body"><div class="chart-box" style="height:240px;"><canvas id="ch-digital-disc"></canvas></div></div>
-      </div>
-      <div class="card">
-        <div class="card-head">
-          <div class="ch-icon" style="background:var(--roxo-cl);color:var(--roxo);"><i class="bi bi-laptop"></i></div>
-          <h2>Progresso por turma e disciplina</h2>
-        </div>
-        <div class="card-body" id="digital-cards-body"></div>
-      </div>
-    </div>
-
-    <!-- ══ RADAR PREDITIVO ══ -->
-    <div id="section-radar" class="section">
-      <div class="radar-hero">
-        <div class="radar-hero-icon"><i class="bi bi-radar"></i></div>
-        <div>
-          <div class="radar-hero-title">Centro de Inteligência Pedagógica</div>
-          <div class="radar-hero-sub">Triagem e priorização para o conselho — alertas para investigação, não veredictos</div>
-        </div>
-      </div>
-
-      <!-- Filtros do Radar -->
-      <div class="card" style="margin-bottom:18px;">
-        <div class="card-head">
-          <div class="ch-icon" style="background:#fff7ed;color:#c2410c;"><i class="bi bi-funnel-fill"></i></div>
-          <h2>Filtros do Radar</h2>
-          <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-            <select id="radar-sel-turma" onchange="renderRadar()" style="font-size:12px;padding:5px 8px;">
-              <option value="">Todas as turmas</option>
-            </select>
-            <select id="radar-sel-disc" onchange="renderRadar()" style="font-size:12px;padding:5px 8px;">
-              <option value="">Todas as disciplinas</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <!-- Métricas do Radar -->
-      <div class="mg" id="mg-radar"></div>
-
-      <!-- Painel de triagem de frequência -->
-      <div class="card" style="margin-bottom:18px;" id="card-radar-freq">
-        <div class="card-head">
-          <div class="ch-icon" style="background:#fff7ed;color:#f97316;"><i class="bi bi-calendar-x-fill"></i></div>
-          <h2>Triagem por Frequência</h2>
-          <span class="badge b-al" style="margin-left:auto;font-size:10px;">Encaminhar para gestão</span>
-        </div>
-        <div class="card-body" id="radar-freq-body"></div>
-      </div>
-
-      <!-- Alertas de Discrepância Digital vs Notas -->
-      <div class="card" style="margin-bottom:18px;" id="card-radar-discrepancia">
-        <div class="card-head">
-          <div class="ch-icon" style="background:#fff7ed;color:#c2410c;"><i class="bi bi-exclamation-triangle-fill"></i></div>
-          <h2>Alertas de Discrepância — Digital vs. Rendimento</h2>
-          <span class="badge b-al" style="margin-left:auto;font-size:10px;">Investigar, não julgar</span>
-        </div>
-        <div class="card-body" id="radar-discrepancia-body">
-          <p style="color:var(--cinza);font-size:13px;">Importe dados com a aba DIGITAL para ativar esta análise.</p>
-        </div>
-      </div>
-
-      <!-- Alerta de Volume de Alunos em Risco -->
-      <div class="card" style="margin-bottom:18px;" id="card-radar-risco-turma">
-        <div class="card-head">
-          <div class="ch-icon" style="background:var(--verm-cl);color:var(--verm);"><i class="bi bi-people-fill"></i></div>
-          <h2>Pontos de Atenção por Turma × Disciplina</h2>
-          <span class="badge b-re" style="margin-left:auto;font-size:10px;">+30% em risco</span>
-        </div>
-        <div class="card-body" id="radar-risco-turma-body"></div>
-      </div>
-
-      <!-- Perfis de Risco Individual -->
-      <div class="card" style="margin-bottom:18px;">
-        <div class="card-head">
-          <div class="ch-icon" style="background:#eff6ff;color:var(--azul);"><i class="bi bi-person-exclamation"></i></div>
-          <h2>Perfis de Risco Individual</h2>
-        </div>
-        <div class="card-body">
-          <div class="g3" id="radar-perfis-grid">
-            <div class="radar-perfil-card radar-perfil-amber">
-              <div class="radar-perfil-head">
-                <span class="radar-perfil-emoji">😶</span>
-                <div>
-                  <div class="radar-perfil-titulo">Desistência Silenciosa</div>
-                  <div class="radar-perfil-desc">Nota na média, faltas crescentes</div>
+        <!-- Upload Summary -->
+        <div id="upload-summary" class="upload-summary hidden">
+          <div class="card">
+            <div class="card-header"><h3>Resumo da Importação</h3></div>
+            <div class="card-body">
+              <div class="grid-3">
+                <div class="stat-card">
+                  <span class="stat-card-label">Turmas Carregadas</span>
+                  <span class="stat-card-value" id="summary-turmas">0</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-card-label">Total de Alunos Ativos</span>
+                  <span class="stat-card-value" id="summary-alunos">0</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-card-label">Disciplinas Detectadas</span>
+                  <span class="stat-card-value" id="summary-disciplinas">0</span>
                 </div>
               </div>
-              <div class="radar-perfil-lista" id="radar-lista-desistencia"></div>
-            </div>
-            <div class="radar-perfil-card radar-perfil-azul">
-              <div class="radar-perfil-head">
-                <span class="radar-perfil-emoji">🎯</span>
-                <div>
-                  <div class="radar-perfil-titulo">Dificuldade Localizada</div>
-                  <div class="radar-perfil-desc">Reprovando em 1 ou 2 disciplinas</div>
-                </div>
+              <!-- Alert for unmapped disciplines -->
+              <div id="alert-nao-mapeadas" class="alert alert-warning mt-4 hidden" role="alert">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                <span>Há disciplinas não mapeadas. Acesse <strong>Configurações</strong> para classificá-las.</span>
               </div>
-              <div class="radar-perfil-lista" id="radar-lista-localizada"></div>
-            </div>
-            <div class="radar-perfil-card radar-perfil-verm">
-              <div class="radar-perfil-head">
-                <span class="radar-perfil-emoji">🚨</span>
-                <div>
-                  <div class="radar-perfil-titulo">Colapso Global</div>
-                  <div class="radar-perfil-desc">Reprovando na maioria + faltas altas</div>
-                </div>
+              <!-- Turmas loaded chips -->
+              <div id="turmas-chips" class="upload-turmas-list mt-4"></div>
+              <div class="mt-4">
+                <button class="btn btn-outline btn-sm" id="btn-exportar-excel">
+                  <i class="bi bi-download"></i> Exportar Excel
+                </button>
               </div>
-              <div class="radar-perfil-lista" id="radar-lista-colapso"></div>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- Índice de Viabilidade de Recuperação -->
-      <div class="card">
-        <div class="card-head">
-          <div class="ch-icon" style="background:var(--roxo-cl);color:var(--roxo);"><i class="bi bi-calculator-fill"></i></div>
-          <h2>Índice de Viabilidade de Recuperação</h2>
-          <span class="badge b-rx" style="margin-left:auto;font-size:10px;">Nota necessária para aprovação</span>
+      <!-- ================================================================ -->
+      <!-- Seção: Painel Geral -->
+      <!-- ================================================================ -->
+      <section class="section" id="section-geral" data-section="geral">
+        <div class="section-header">
+          <div>
+            <h2>Painel Geral</h2>
+            <p>Visão consolidada de todas as turmas carregadas</p>
+          </div>
         </div>
-        <div class="card-body" id="radar-viabilidade-body"></div>
-      </div>
-    </div>
 
-    <!-- ══ RELATÓRIOS PDF ══ -->
-    <div id="section-relatorios" class="section">
-      <div class="g2" style="margin-bottom:18px;">
+        <div class="indicators-row" id="geral-indicators">
+          <div class="stat-card">
+            <span class="stat-card-label">Total de Alunos</span>
+            <span class="stat-card-value" id="geral-total-alunos">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-label">Aprovados</span>
+            <span class="stat-card-value text-success" id="geral-aprovados">—</span>
+            <span class="stat-card-aux" id="geral-pct-aprovados"></span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-label">Alerta de Frequência</span>
+            <span class="stat-card-value text-warning" id="geral-alerta-freq">—</span>
+            <span class="stat-card-aux">Abaixo de 75%</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-label">Frequência Crítica</span>
+            <span class="stat-card-value text-critical" id="geral-crit-freq">—</span>
+            <span class="stat-card-aux">Abaixo de 50%</span>
+          </div>
+        </div>
+
+        <div class="charts-grid">
+          <div class="card">
+            <div class="card-header"><h3>Situação por Turma</h3></div>
+            <div class="card-body">
+              <div class="chart-container"><canvas id="chart-geral-situacao-turma"></canvas></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Média por Disciplina</h3></div>
+            <div class="card-body">
+              <div class="chart-container"><canvas id="chart-geral-media-disciplina"></canvas></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Frequência Média por Turma</h3></div>
+            <div class="card-body">
+              <div class="chart-container"><canvas id="chart-geral-freq-turma"></canvas></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Situação por Área</h3></div>
+            <div class="card-body">
+              <div class="chart-container"><canvas id="chart-geral-area"></canvas></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- Seção: Por Turma -->
+      <!-- ================================================================ -->
+      <section class="section" id="section-turma" data-section="turma">
+        <div class="section-header">
+          <div>
+            <h2>Por Turma</h2>
+            <p>Análise detalhada por turma e aluno</p>
+          </div>
+          <div class="turma-selector">
+            <label for="select-turma" class="form-label">Turma:</label>
+            <select id="select-turma" class="form-select"></select>
+          </div>
+        </div>
+
+        <div class="indicators-row" id="turma-indicators">
+          <div class="stat-card">
+            <span class="stat-card-label">Alunos</span>
+            <span class="stat-card-value" id="turma-alunos">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-label">Média da Turma</span>
+            <span class="stat-card-value" id="turma-media">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-label">Aprovados</span>
+            <span class="stat-card-value text-success" id="turma-aprovados">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-label">Alerta de Freq.</span>
+            <span class="stat-card-value text-warning" id="turma-alerta-freq">—</span>
+          </div>
+        </div>
+
         <div class="card">
-          <div class="card-head">
-            <div class="ch-icon" style="background:#eff6ff;color:var(--azul);"><i class="bi bi-people-fill"></i></div>
-            <h2>Relatório por turma</h2>
+          <div class="card-header"><h3>Alunos</h3></div>
+          <div class="card-body" style="padding: 0;">
+            <div class="table-wrapper">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>Situação</th>
+                    <th class="table-numeric">Média</th>
+                    <th class="table-numeric">Frequência</th>
+                    <th class="table-center">Detalhes</th>
+                  </tr>
+                </thead>
+                <tbody id="turma-tabela-body"></tbody>
+              </table>
+            </div>
           </div>
+        </div>
+
+        <div class="turma-detail-charts">
+          <div class="card">
+            <div class="card-header"><h3>Média por Disciplina</h3></div>
+            <div class="card-body">
+              <div class="chart-container"><canvas id="chart-turma-media-disc"></canvas></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Frequência por Disciplina</h3></div>
+            <div class="card-body">
+              <div class="chart-container"><canvas id="chart-turma-freq-disc"></canvas></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- Seção: Por Disciplina -->
+      <!-- ================================================================ -->
+      <section class="section" id="section-disciplina" data-section="disciplina">
+        <div class="section-header">
+          <div>
+            <h2>Por Disciplina</h2>
+            <p>Análise de desempenho por disciplina</p>
+          </div>
+          <div class="disciplina-selector">
+            <label for="select-disciplina-turma" class="form-label">Turma:</label>
+            <select id="select-disciplina-turma" class="form-select"></select>
+            <label for="select-disciplina" class="form-label">Disciplina:</label>
+            <select id="select-disciplina" class="form-select"></select>
+          </div>
+        </div>
+
+        <div class="indicators-row" id="disciplina-indicators">
+          <div class="stat-card">
+            <span class="stat-card-label">Média Geral</span>
+            <span class="stat-card-value" id="disc-media">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-label">Abaixo da Média</span>
+            <span class="stat-card-value text-warning" id="disc-abaixo-media">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-label">Alerta de Freq.</span>
+            <span class="stat-card-value text-warning" id="disc-alerta-freq">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-label">Aulas Dadas</span>
+            <span class="stat-card-value" id="disc-aulas-dadas">—</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Distribuição de Notas</h3></div>
           <div class="card-body">
-            <p style="font-size:13px;color:var(--cinza);margin-bottom:14px;">Resumo completo: todas as disciplinas, situações e alertas de frequência.</p>
-            <label style="font-size:12px;font-weight:600;color:var(--cinza-esc);display:block;margin-bottom:6px;">Turma</label>
-            <select id="sel-turma-pdf" style="width:100%;margin-bottom:12px;"></select>
-            <button class="btn btn-primary" style="width:100%;" onclick="pdfTurma()"><i class="bi bi-file-earmark-pdf"></i> Gerar PDF</button>
+            <div class="chart-container chart-container-lg"><canvas id="chart-disciplina-dist"></canvas></div>
           </div>
         </div>
+
         <div class="card">
-          <div class="card-head">
-            <div class="ch-icon" style="background:#f0fdf4;color:var(--verde);"><i class="bi bi-person-vcard-fill"></i></div>
-            <h2>Boletim individual</h2>
-          </div>
-          <div class="card-body">
-            <p style="font-size:13px;color:var(--cinza);margin-bottom:14px;">Boletim completo: notas bimestrais, frequência e situação por disciplina.</p>
-            <label style="font-size:12px;font-weight:600;color:var(--cinza-esc);display:block;margin-bottom:6px;">Turma</label>
-            <select id="sel-turma-aluno" onchange="popAluno()" style="width:100%;margin-bottom:8px;"></select>
-            <label style="font-size:12px;font-weight:600;color:var(--cinza-esc);display:block;margin-bottom:6px;">Aluno</label>
-            <select id="sel-aluno-pdf" style="width:100%;margin-bottom:12px;"></select>
-            <button class="btn btn-success" style="width:100%;" onclick="pdfAluno()"><i class="bi bi-file-earmark-person"></i> Gerar boletim</button>
-          </div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-head">
-          <div class="ch-icon" style="background:#fff7ed;color:#c2410c;"><i class="bi bi-card-checklist"></i></div>
-          <h2>Relatório por disciplina</h2>
-        </div>
-        <div class="card-body">
-          <p style="font-size:13px;color:var(--cinza);margin-bottom:14px;">Notas bimestrais, frequência real por bimestre e alertas pedagógicos para impressão.</p>
-          <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
-            <div style="flex:1;min-width:150px;">
-              <label style="font-size:12px;font-weight:600;color:var(--cinza-esc);display:block;margin-bottom:6px;">Disciplina</label>
-              <select id="sel-disc-pdf" style="width:100%;"></select>
-            </div>
-            <div style="flex:1;min-width:150px;">
-              <label style="font-size:12px;font-weight:600;color:var(--cinza-esc);display:block;margin-bottom:6px;">Turma (opcional)</label>
-              <select id="sel-turma-disc-pdf" style="width:100%;"><option value="">Todas</option></select>
+          <div class="card-header"><h3>Alunos</h3></div>
+          <div class="card-body" style="padding: 0;">
+            <div class="table-wrapper">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th class="table-numeric">Nota</th>
+                    <th class="table-numeric">Faltas</th>
+                    <th class="table-numeric">Frequência</th>
+                  </tr>
+                </thead>
+                <tbody id="disciplina-tabela-body"></tbody>
+              </table>
             </div>
           </div>
-          <button class="btn btn-outline" onclick="pdfDisc()"><i class="bi bi-file-earmark-ruled"></i> Gerar relatório</button>
         </div>
-      </div>
-    </div>
+      </section>
 
-    <!-- ══ PPTX ══ -->
-    <div id="section-pptx" class="section">
-      <div class="card" style="margin-bottom:20px;">
-        <div class="card-head">
-          <div class="ch-icon" style="background:var(--roxo-cl);color:var(--roxo);"><i class="bi bi-file-earmark-slides"></i></div>
-          <h2>Gerar Apresentação PowerPoint</h2>
-        </div>
-        <div class="card-body">
-          <div class="ib" style="margin-bottom:18px;">
-            <i class="bi bi-info-circle-fill"></i>
-            <span>O sistema detecta automaticamente o contexto: <strong>sem filtro</strong> gera um relatório geral com um slide de resumo por turma; <strong>com filtro</strong> gera um relatório detalhado com lista de alunos e progresso digital.</span>
+      <!-- ================================================================ -->
+      <!-- Seção: Por Área -->
+      <!-- ================================================================ -->
+      <section class="section" id="section-area" data-section="area">
+        <div class="section-header">
+          <div>
+            <h2>Por Área</h2>
+            <p>Desempenho agrupado pelas áreas configuradas nas disciplinas</p>
           </div>
+        </div>
 
-          <div class="pptx-config-grid">
-            <div class="pptx-config-bloco">
-              <h3 class="pptx-config-titulo"><i class="bi bi-funnel"></i> Filtros (opcional)</h3>
-              <label style="font-size:12px;font-weight:600;color:var(--cinza-esc);display:block;margin-bottom:5px;">Turma</label>
-              <select id="pptx-sel-turma" style="width:100%;margin-bottom:12px;" onchange="atualizarContextoPPTX()">
-                <option value="">Todas as turmas (Relatório Geral)</option>
-              </select>
-              <label style="font-size:12px;font-weight:600;color:var(--cinza-esc);display:block;margin-bottom:5px;">Disciplina</label>
-              <select id="pptx-sel-disc" style="width:100%;margin-bottom:0;" onchange="atualizarContextoPPTX()">
-                <option value="">Todas as disciplinas</option>
+        <div id="area-content"></div>
+        <div id="area-empty" class="empty-state">
+          <div class="empty-state-icon"><i class="bi bi-diagram-3"></i></div>
+          <h3>Nenhum dado disponível</h3>
+          <p>Importe os mapões e classifique as disciplinas em Configurações.</p>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- Seção: Medalhistas -->
+      <!-- ================================================================ -->
+      <section class="section" id="section-medalhistas" data-section="medalhistas">
+        <div class="section-header">
+          <div>
+            <h2>Medalhistas</h2>
+            <p>Destaques positivos por turma — melhores médias e frequência perfeita</p>
+          </div>
+          <div class="section-actions">
+            <div class="form-group" style="margin:0;">
+              <select id="select-medalhistas-turma" class="form-select" style="min-width: 160px;">
+                <option value="todas">Todas as turmas</option>
               </select>
             </div>
+          </div>
+        </div>
 
-            <div class="pptx-config-bloco">
-              <h3 class="pptx-config-titulo"><i class="bi bi-eye"></i> Prévia do relatório</h3>
-              <div id="pptx-preview" class="pptx-preview-box">
-                <div class="pptx-preview-icon"><i class="bi bi-file-earmark-slides"></i></div>
-                <div class="pptx-preview-titulo" id="pptx-prev-titulo">Relatório Geral da Escola</div>
-                <div class="pptx-preview-desc" id="pptx-prev-desc">Importe dados para visualizar a prévia</div>
-                <div class="pptx-preview-slides" id="pptx-prev-slides"></div>
+        <div class="card">
+          <div class="card-header"><h3>Melhor Média por Turma</h3></div>
+          <div class="card-body">
+            <div id="medalhistas-media-grid" class="medalhistas-grid"></div>
+            <div id="medalhistas-media-empty" class="empty-state hidden">
+              <div class="empty-state-icon"><i class="bi bi-trophy"></i></div>
+              <h3>Nenhum dado disponível</h3>
+              <p>Importe os mapões para ver os destaques de cada turma.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header" style="background: #FDF2EC;"><h3 style="color: #C4953A;">🥇 Destaque Ouro</h3></div>
+          <div class="card-body">
+            <p class="text-sm text-muted mb-4">Frequência ≥ 90% · Média ≥ 9</p>
+            <div id="medalhistas-ouro-grid" class="medalhistas-grid"></div>
+            <div id="medalhistas-ouro-empty" class="empty-state hidden">
+              <div class="empty-state-icon"><i class="bi bi-award"></i></div>
+              <h3>Nenhum aluno Ouro</h3>
+              <p>Nenhum aluno atingiu os critérios nesta categoria.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header" style="background: #F4F5F7;"><h3 style="color: #7A8599;">🥈 Destaque Prata</h3></div>
+          <div class="card-body">
+            <p class="text-sm text-muted mb-4">Frequência ≥ 90% · Média entre 8 e 9</p>
+            <div id="medalhistas-prata-grid" class="medalhistas-grid"></div>
+            <div id="medalhistas-prata-empty" class="empty-state hidden">
+              <div class="empty-state-icon"><i class="bi bi-award"></i></div>
+              <h3>Nenhum aluno Prata</h3>
+              <p>Nenhum aluno atingiu os critérios nesta categoria.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header" style="background: #FDF5F3;"><h3 style="color: #C26547;">🥉 Destaque Bronze</h3></div>
+          <div class="card-body">
+            <p class="text-sm text-muted mb-4">Frequência ≥ 90% · Média entre 7 e 8</p>
+            <div id="medalhistas-bronze-grid" class="medalhistas-grid"></div>
+            <div id="medalhistas-bronze-empty" class="empty-state hidden">
+              <div class="empty-state-icon"><i class="bi bi-award"></i></div>
+              <h3>Nenhum aluno Bronze</h3>
+              <p>Nenhum aluno atingiu os critérios nesta categoria.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Frequência Perfeita (100%)</h3></div>
+          <div class="card-body">
+            <div id="medalhistas-freq-grid" class="medalhistas-grid"></div>
+            <div id="medalhistas-freq-empty" class="empty-state hidden">
+              <div class="empty-state-icon"><i class="bi bi-star"></i></div>
+              <h3>Nenhum dado disponível</h3>
+              <p>Importe os mapões para ver os alunos com frequência perfeita.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- Seção: Material Digital -->
+      <!-- ================================================================ -->
+      <section class="section" id="section-digital" data-section="digital">
+        <div class="section-header">
+          <div>
+            <h2>Material Digital</h2>
+            <p>Progresso das aulas digitais — previsto vs. concluído por turma e disciplina</p>
+          </div>
+          <div class="section-actions">
+            <div class="form-group" style="margin:0;">
+              <select id="select-digital-turma" class="form-select" style="min-width: 160px;">
+                <option value="todas">Todas as turmas</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <select id="select-digital-bim" class="form-select" style="min-width: 140px;">
+                <option value="1">1º Bimestre</option>
+                <option value="2">2º Bimestre</option>
+                <option value="3">3º Bimestre</option>
+                <option value="4">4º Bimestre</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div id="digital-content"></div>
+        <div id="digital-empty" class="empty-state">
+          <div class="empty-state-icon"><i class="bi bi-laptop"></i></div>
+          <h3>Nenhum dado de aulas digitais</h3>
+          <p>Importe a planilha de aulas digitais para acompanhar o progresso.</p>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- Seção: Radar Preditivo -->
+      <!-- ================================================================ -->
+      <section class="section" id="section-radar" data-section="radar">
+        <div class="section-header">
+          <div>
+            <h2>Radar Preditivo</h2>
+            <p>Alunos em risco ordenados por criticidade</p>
+          </div>
+          <div class="radar-filters">
+            <label for="select-radar-turma" class="form-label">Turma:</label>
+            <select id="select-radar-turma" class="form-select">
+              <option value="todas">Todas as turmas</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="radar-list" class="radar-list"></div>
+        <div id="radar-empty" class="empty-state">
+          <div class="empty-state-icon"><i class="bi bi-bullseye"></i></div>
+          <h3>Nenhum aluno em risco</h3>
+          <p>Todos os alunos estão com bom desempenho ou nenhum dado foi carregado.</p>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- Seção: Configurações -->
+      <!-- ================================================================ -->
+      <section class="section" id="section-configuracoes" data-section="configuracoes">
+        <div class="section-header">
+          <div>
+            <h2>Configurações</h2>
+            <p>Classifique disciplinas por área, configure equivalências de menções e ajuste parâmetros de cálculo</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Áreas das Disciplinas <span id="config-areas-count" class="badge badge-neutral"></span></h3></div>
+          <div class="card-body" style="padding: 0;">
+            <div class="table-wrapper">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Disciplina</th>
+                    <th>Área</th>
+                  </tr>
+                </thead>
+                <tbody id="config-areas-body">
+                  <tr>
+                    <td colspan="2" class="text-center text-muted">
+                      Nenhuma disciplina carregada. Importe os mapões primeiro.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Equivalências de Menções (Letras)</h3></div>
+          <div class="card-body" style="padding: 0;">
+            <div class="table-wrapper">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Menção</th>
+                    <th>Equivalência Numérica (0–10)</th>
+                  </tr>
+                </thead>
+                <tbody id="config-mencoes-body">
+                  <tr>
+                    <td colspan="2" class="text-center text-muted">
+                      Nenhuma menção detectada. Importe os mapões primeiro.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Parâmetros de Cálculo</h3></div>
+          <div class="card-body">
+            <div class="config-params">
+              <div class="form-group">
+                <label for="param-media-aprov" class="form-label">Média Mínima para Aprovação</label>
+                <input type="number" id="param-media-aprov" class="form-input"
+                       min="0" max="10" step="0.1" value="5.0">
+              </div>
+              <div class="form-group">
+                <label for="param-freq-min" class="form-label">Frequência Mínima (%)</label>
+                <input type="number" id="param-freq-min" class="form-input"
+                       min="0" max="100" step="1" value="75">
+              </div>
+              <div class="form-group">
+                <label for="param-freq-crit" class="form-label">Frequência Crítica (%)</label>
+                <input type="number" id="param-freq-crit" class="form-input"
+                       min="0" max="100" step="1" value="50">
               </div>
             </div>
           </div>
+        </div>
 
-          <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-            <button class="btn btn-pptx btn-lg" onclick="gerarPPTX()">
-              <i class="bi bi-file-earmark-slides-fill"></i> Gerar e Baixar PPTX
-            </button>
-            <button class="btn btn-outline btn-sm" onclick="document.getElementById('pptx-sel-turma').value='';document.getElementById('pptx-sel-disc').value='';atualizarContextoPPTX();">
-              <i class="bi bi-x-circle"></i> Limpar filtros
-            </button>
+        <div id="config-save-bar" class="config-save-bar hidden">
+          <div class="config-save-status" id="config-save-status"></div>
+          <button class="btn btn-primary" id="btn-config-salvar">
+            <i class="bi bi-check-lg"></i> Salvar Configurações
+          </button>
+        </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- Seção: Relatórios PDF -->
+      <!-- ================================================================ -->
+      <section class="section" id="section-relatorios" data-section="relatorios">
+        <div class="section-header">
+          <div>
+            <h2>Relatórios PDF</h2>
+            <p>Gere relatórios em PDF com os dados dos mapões carregados</p>
           </div>
         </div>
-      </div>
 
-      <div class="g2">
         <div class="card">
-          <div class="card-head">
-            <div class="ch-icon" style="background:var(--roxo-cl);color:var(--roxo);"><i class="bi bi-layout-text-sidebar"></i></div>
-            <h2>Relatório Geral (sem filtro)</h2>
-          </div>
+          <div class="card-header"><h3>Filtros</h3></div>
           <div class="card-body">
-            <p style="font-size:13px;color:var(--cinza);margin-bottom:10px;">Gerado automaticamente quando nenhuma turma ou disciplina está selecionada.</p>
-            <ul style="font-size:13px;color:var(--cinza-esc);padding-left:18px;line-height:2;">
-              <li><strong>Slide 1:</strong> Capa com título e data</li>
-              <li><strong>Slide 2:</strong> Painel consolidado da escola</li>
-              <li><strong>Slides 3+:</strong> Um resumo por turma (indicadores + tabela)</li>
-            </ul>
+            <div class="export-filters">
+              <div class="form-group">
+                <label for="pdf-tipo" class="form-label">Tipo de Relatório</label>
+                <select id="pdf-tipo" class="form-select">
+                  <option value="geral">Relatório Geral</option>
+                  <option value="turma">Por Turma</option>
+                  <option value="radar">Radar Preditivo</option>
+                </select>
+              </div>
+              <div class="form-group" id="pdf-turma-group">
+                <label for="pdf-turma" class="form-label">Turma</label>
+                <select id="pdf-turma" class="form-select">
+                  <option value="todas">Todas as turmas</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" id="btn-gerar-pdf">
+                <i class="bi bi-file-earmark-pdf"></i> Gerar PDF
+              </button>
+            </div>
           </div>
         </div>
+      </section>
+
+      <!-- ================================================================ -->
+      <!-- Seção: Apresentações PPTX -->
+      <!-- ================================================================ -->
+      <section class="section" id="section-apresentacoes" data-section="apresentacoes">
+        <div class="section-header">
+          <div>
+            <h2>Apresentações PPTX</h2>
+            <p>Gere apresentações em PowerPoint com os dados dos mapões carregados</p>
+          </div>
+        </div>
+
         <div class="card">
-          <div class="card-head">
-            <div class="ch-icon" style="background:#eff6ff;color:var(--azul);"><i class="bi bi-layout-text-window-reverse"></i></div>
-            <h2>Relatório Detalhado (com filtro)</h2>
-          </div>
+          <div class="card-header"><h3>Filtros</h3></div>
           <div class="card-body">
-            <p style="font-size:13px;color:var(--cinza);margin-bottom:10px;">Gerado quando turma e/ou disciplina estão selecionadas.</p>
-            <ul style="font-size:13px;color:var(--cinza-esc);padding-left:18px;line-height:2;">
-              <li><strong>Slide 1:</strong> Capa com turma/disciplina e data</li>
-              <li><strong>Slide 2:</strong> Indicadores e resumo de situação</li>
-              <li><strong>Slides 3+:</strong> Tabelas de alunos com notas e frequência</li>
-              <li><strong>Último:</strong> Progresso do Material Digital (se disponível)</li>
-            </ul>
+            <div class="export-filters">
+              <div class="form-group">
+                <label for="pptx-tipo" class="form-label">Tipo de Apresentação</label>
+                <select id="pptx-tipo" class="form-select">
+                  <option value="geral">Apresentação Geral</option>
+                  <option value="turma">Por Turma</option>
+                  <option value="disciplina">Por Disciplina</option>
+                </select>
+              </div>
+              <div class="form-group" id="pptx-turma-group">
+                <label for="pptx-turma" class="form-label">Turma</label>
+                <select id="pptx-turma" class="form-select">
+                  <option value="todas">Todas as turmas</option>
+                </select>
+              </div>
+              <div class="form-group" id="pptx-disciplina-group" style="display:none;">
+                <label for="pptx-disciplina" class="form-label">Disciplina</label>
+                <select id="pptx-disciplina" class="form-select"></select>
+              </div>
+              <button class="btn btn-primary" id="btn-gerar-pptx-conselho">
+                <i class="bi bi-file-earmark-ppt"></i> Gerar Conselho
+              </button>
+              <button class="btn btn-outline" id="btn-gerar-pptx-pais">
+                <i class="bi bi-file-earmark-ppt"></i> Gerar Pais
+              </button>
+            </div>
           </div>
         </div>
+      </section>
+
+    </main>
+  </div>
+  </div>
+
+  <!-- ================================================================ -->
+  <!-- Modal: Detalhes do Aluno -->
+  <!-- ================================================================ -->
+  <div class="modal-overlay" id="modal-aluno-overlay" aria-hidden="true">
+    <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="modal-aluno-title">
+      <div class="modal-header">
+        <h3 id="modal-aluno-title">Detalhes do Aluno</h3>
+        <button class="modal-close" id="modal-aluno-close" aria-label="Fechar modal">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+      <div class="modal-body" id="modal-aluno-body"></div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="modal-aluno-btn-print" style="display:none;">
+          <i class="bi bi-printer"></i> Imprimir Boletim
+        </button>
+        <button class="btn btn-outline" id="modal-aluno-btn-close">Fechar</button>
       </div>
     </div>
-
-  </div><!-- /content -->
-</div><!-- /main -->
-
-<!-- MODAL ALUNO -->
-<div class="mbk" id="modal-aluno" onclick="fecharModal(event)">
-  <div class="modal">
-    <div class="mh">
-      <div class="av" id="m-av"></div>
-      <h3 id="m-nome" style="margin:0 8px;"></h3>
-      <span id="m-sit" class="badge"></span>
-      <button class="mc-btn" onclick="document.getElementById('modal-aluno').classList.remove('open')">×</button>
-    </div>
-    <div class="mb" id="m-body"></div>
   </div>
-</div>
 
-<!-- BANNER LGPD -->
-<div id="lgpd-banner">
-  <p>
-    <strong>🔒 Privacidade e proteção de dados (LGPD)</strong><br>
-    Este sistema processa dados de estudantes exclusivamente no seu navegador —
-    <strong>nenhuma informação é enviada ou armazenada em servidores externos</strong>.
-    Os arquivos importados permanecem apenas na sessão atual e são descartados ao fechar a aba.
-    <a onclick="abrirPolitica()">Saiba mais sobre como tratamos os dados.</a>
-  </p>
-  <div class="lgpd-btns">
-    <button class="lgpd-btn-rec" onclick="recusarCookies()">Apenas essencial</button>
-    <button class="lgpd-btn-ok" onclick="aceitarCookies()">Entendi e aceito</button>
-  </div>
-</div>
-
-<!-- MODAL POLÍTICA LGPD -->
-<div id="lgpd-modal" onclick="fecharPolitica(event)">
-  <div class="lm">
-    <div class="lm-head">
-      <h3>Política de Privacidade e Proteção de Dados</h3>
-      <button onclick="document.getElementById('lgpd-modal').classList.remove('open')">×</button>
-    </div>
-    <div class="lm-body">
-      <h4>1. Sobre este sistema</h4>
-      <p>O Dashboard de Conselho de Classe é uma ferramenta de uso interno escolar que processa dados de desempenho e frequência de estudantes. O sistema foi desenvolvido para funcionar inteiramente no navegador do usuário, sem dependência de servidores externos.</p>
-      <h4>2. Quais dados são tratados</h4>
-      <p>O sistema trata dados inseridos manualmente pelo usuário por meio de planilhas (.xlsx, .xls, .csv), que podem incluir: nome de estudantes, turma, disciplina, notas bimestrais e registro de frequência/faltas.</p>
-      <h4>3. Base legal (LGPD — Lei nº 13.709/2018)</h4>
-      <p>O tratamento se fundamenta no <strong>legítimo interesse</strong> da instituição de ensino para fins de acompanhamento pedagógico (art. 7º, IX da LGPD) e no <strong>cumprimento de obrigação legal</strong> referente ao registro e avaliação de estudantes (art. 7º, II).</p>
-      <h4>4. Como os dados são tratados</h4>
-      <p><strong>Processamento local:</strong> todos os cálculos ocorrem exclusivamente no navegador do dispositivo do usuário.</p>
-      <p><strong>Sem transmissão:</strong> nenhum dado é enviado a servidores, APIs externas ou terceiros.</p>
-      <p><strong>Sem armazenamento persistente:</strong> os dados existem apenas enquanto a aba do navegador está aberta.</p>
-      <p><strong>Sem cookies de rastreamento:</strong> o sistema utiliza apenas um cookie de preferência local (<code>lgpd_consent</code>) para registrar sua escolha neste banner.</p>
-      <h4>5. Responsabilidade</h4>
-      <p>A responsabilidade pelo correto uso dos dados e pela guarda das planilhas é da instituição de ensino e dos profissionais que operam o sistema.</p>
-      <h4>6. Direitos dos titulares</h4>
-      <p>Nos termos da LGPD, os estudantes e responsáveis têm direito de acesso, correção e eliminação dos dados. Solicitações devem ser encaminhadas à coordenação pedagógica da instituição.</p>
-      <h4>7. Contato</h4>
-      <p>Dúvidas sobre privacidade devem ser direcionadas à equipe gestora da escola responsável pela implantação deste sistema.</p>
-    </div>
-    <div class="lm-footer">
-      <button class="lgpd-btn-ok" onclick="document.getElementById('lgpd-modal').classList.remove('open')">Fechar</button>
+  <!-- ================================================================ -->
+  <!-- Loader -->
+  <!-- ================================================================ -->
+  <div class="loader-overlay" id="loader" aria-live="polite">
+    <div class="loader-text">
+      <div class="loader"></div>
+      <p id="loader-text">Carregando...</p>
     </div>
   </div>
-</div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
-<script src="js/app.js"></script>
+  <!-- ================================================================ -->
+  <!-- LGPD Banner -->
+  <!-- ================================================================ -->
+  <div class="lgpd-banner" id="lgpd-banner" role="alert">
+    <p>
+      Este sistema processa dados do Conselho de Classe exclusivamente no seu navegador.
+      Nenhuma informação é enviada para servidores externos ou armazenada fora do seu dispositivo.
+    </p>
+    <button class="btn btn-primary btn-sm" id="lgpd-accept">Entendi</button>
+  </div>
+
+  <!-- App Entry -->
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

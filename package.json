@@ -1,0 +1,15 @@
+{
+  "name": "conselho-de-classe",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dashboard Conselho de Classe — 100% client-side",
+  "type": "module",
+  "scripts": {
+    "test:calc": "node --experimental-vm-modules js/tests/calc.test.js",
+    "test:parser": "node --experimental-vm-modules js/tests/parser.test.js",
+    "test": "node --experimental-vm-modules js/tests/calc.test.js && node --experimental-vm-modules js/tests/parser.test.js"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  }
+}
